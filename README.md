@@ -1,6 +1,6 @@
 # The Final Turn-Based Battle
 
-A browser-based, turn-based RPG where you choose three of five supporting characters to join Niko Himura against a challenging boss.
+A browser-based, turn-based RPG where you choose three of five supporting characters to join Niko Himura against the AI that trapped them all in the Trauma Rehabilitation Program.
 
 - **Frontend:** HTML, CSS and JavaScript handle combat, dialogue and animations.
 - **Backend:** AWS Lambda and Amazon Aurora DSQL store saves, inventory and combat history.
