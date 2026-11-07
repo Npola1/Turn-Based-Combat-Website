@@ -1,0 +1,36 @@
+{
+  "name": "final-turn-battle",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node scripts/test-game.mjs",
+    "test:browser": "node scripts/test-game.mjs --suite browser",
+    "test:skills": "node scripts/test-game.mjs --suite skills",
+    "test:init": "node scripts/test-game.mjs --suite init",
+    "test:browser-info": "node scripts/show-test-browser.mjs",
+    "test:attacks": "node scripts/test-game.mjs --suite attacks",
+    "test:phases": "node scripts/test-game.mjs --suite phases",
+    "test:all": "node scripts/test-game.mjs",
+    "test:unit": "node scripts/test-game.mjs --suite unit",
+    "test:extended": "node scripts/test-game.mjs --suite extended",
+    "test:api": "node scripts/test-game.mjs --suite api",
+    "test:transport": "node scripts/test-game.mjs --suite transport",
+    "test:journeys": "node scripts/test-game.mjs --suite journeys",
+    "test:matrix": "node scripts/test-game.mjs --suite matrix",
+    "build:aws": "node scripts/build-aws.mjs",
+    "db:init": "node scripts/init-dsql.mjs",
+    "db:migrate": "node scripts/migrate-sqlite.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/dsql-signer": "^3.1163.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
+    "esbuild": "^0.28.2"
+  }
+}

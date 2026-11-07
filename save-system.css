@@ -1,0 +1,31 @@
+html.save-choice-pending #selectPanel { visibility: hidden !important; pointer-events: none !important; }
+#rpg-save-controls {
+  position: fixed; right: 12px; top: 12px; z-index: 2147483646;
+  display: flex; align-items: center; gap: 8px; max-width: min(520px, 90vw);
+  padding: 8px 12px; border: 1px solid #39407a; border-radius: 10px;
+  background: #101436; color: #e7e9f7; font: 12px system-ui;
+}
+#rpg-save-controls[hidden] { display: none !important; }
+#rpg-save-controls button { padding: 7px 10px; font-size: 13px; }
+.rpg-save-dialog {
+  color: #e7e9f7; background: #101436; border: 1px solid #5965a6;
+  border-radius: 16px; padding: clamp(18px, 3vw, 32px);
+  width: min(760px, 90vw); max-height: 85dvh; overflow: auto;
+  box-shadow: 0 20px 100px #000a; font: 15px/1.5 system-ui;
+}
+.rpg-save-dialog::backdrop { background: #070918ed; }
+.rpg-save-dialog h2 { margin: 0 0 8px; font-size: 25px; }
+.rpg-save-dialog p { color: #c7cafc; margin: 0 0 16px; }
+.rpg-save-grid { display: grid; gap: 10px; margin: 18px 0; }
+.rpg-save-slot { display: flex; text-align: left; flex-direction: column; gap: 4px; padding: 12px 16px; }
+.rpg-save-slot small { font-weight: 400; line-height: 1.4; }
+.rpg-save-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.rpg-save-dialog [role=status] { display: block; min-height: 1.5em; color: #f6cf82; }
+.rpg-save-dialog pre { white-space: pre-wrap; font: 13px/1.5 system-ui; padding: 8px; }
+.rpg-save-dialog details { border-bottom: 1px solid #39407a; padding: 10px 0; }
+.rpg-save-primary { background: #344b8d; border-color: #6c8bdd; }
+@media (min-width: 620px) {
+  .rpg-save-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.rpg-save-slot small { white-space: pre-line; }
+.rpg-save-actions { position: sticky; bottom: 0; padding-top: 10px; background: #101436; }

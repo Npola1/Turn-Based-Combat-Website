@@ -5,8 +5,68 @@
 <meta name="layout-baseline" content="1600x900"/>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>The Final Turn-Based Battle: Party Select, Energy, Speed, Skills</title>
+<link rel="stylesheet" href="save-system.css">
+<!--
+REVIEW GUIDE: START HERE
+========================
+This file contains the page, its styles, the battle engine, and later overrides.
+Search for the REVIEW labels below to navigate without knowing the codebase.
+The existing declarations, execution order, and CSS cascade are preserved.
+
+READING ORDER
+  REVIEW: PAGE STYLES       Base styles and the initial presentation overrides.
+  REVIEW: PAGE STRUCTURE    Party selection, battle panels, and dialogue markup.
+  REVIEW: GAME ENGINE       The main closure containing shared battle state.
+  REVIEW: CORE 01-20        Named sections within that closure (listed below).
+  REVIEW: CORE OVERRIDES    Later wrappers and replacements inside the closure.
+  REVIEW: SAVE ADAPTER      Snapshot, restoration, and save-readiness integration.
+  REVIEW: PAGE OVERRIDES    Later layout, menu, opening-screen, and ending blocks.
+
+GAME ENGINE MAP
+  CORE 01  Shared flags, stat tiers, roster, and rule constants.
+  CORE 02  Unit builders, portraits, and references to page controls.
+  CORE 03  Music players, sound effects, and portrait presentation helpers.
+  CORE 04  Skill definitions and battle state.
+  CORE 05  Status protection and story dialogue data.
+  CORE 06  Analytical Thinking and dialogue input locks.
+  CORE 07  Defeat dialogue and boss phase-transition gates.
+  CORE 08  Effective stats, damage, accuracy, and critical hits.
+  CORE 09  Status durations, enemy summons, and turn-start effects.
+  CORE 10  Battle rendering and command menus.
+  CORE 11  Player skill execution.
+  CORE 12  Follow-ups and automatic actions.
+  CORE 13  Opening summons, action counts, and end conditions.
+  CORE 14  Game-over presentation and ending dispatch.
+  CORE 15  Player action completion and turn advancement.
+  CORE 16  Enemy turns and enemy action selection.
+  CORE 17  Guide/details rendering and dialogue history.
+  CORE 18  Pre-fight and summon dialogue presentation.
+  CORE 19  Battle reset, Start Battle, and opening callbacks.
+  CORE 20  Error wrappers and subsequent core overrides.
+
+FLOW TO FOLLOW WHEN REVIEWING
+  Opening warning's Yes handler (near the end of the file)
+    -> save-system.js picker -> New Battle or restored snapshot.
+  New Battle -> Start Battle handler -> pre-fight dialogue -> Reincarnation
+    -> summon dialogue -> first ready player turn.
+  Player commands -> action completion -> turn advancement -> enemyPhase.
+  Summon defeats and boss HP gates pause that flow for dialogue.
+
+IMPORTANT CONTEXT
+  Later function wrappers can replace behavior defined earlier in the file.
+  Later style blocks can override earlier rules, including with !important.
+  V-number comments identify revisions; they are not battle phase numbers.
+  SS_PHASE2_* names refer to the boss power-up at 25,000 HP.
+  Save UI/API requests live in save-system.js; this file supplies the adapter.
+  The regression suites live together in scripts/test-game.mjs (npm test).
+  Inline assets and dialogue text are retained exactly as they were.
+-->
+
 <!-- USER REQUEST V102: dialogue/phase-breaks reset player turn usage and restart from Niko -->
+
+<!-- REVIEW: PAGE STYLES | Base appearance, then presentation overrides in cascade order. -->
 <style data-inlined-from="css/01-style-01.css">
+/* REVIEW STYLE 01 | css/01-style-01.css */
 /* Keep the YouTube iframes invisible but reliably playing */
   #bgm, #selectBgm, #prefightBgm { position:absolute; width:0px; height:0px; overflow:hidden; }
   #bgm iframe, #selectBgm iframe, #prefightBgm iframe { width:0px; height:0px; opacity:0; pointer-events:none; }
@@ -422,6 +482,7 @@
 </style>
 
 <style data-inlined-from="css/02-layout-lock.css">
+/* REVIEW STYLE 02 | css/02-layout-lock.css */
 html, body { height:100%; margin:0; background:#151935; overflow:auto; }
   #stage {
     position:absolute;
@@ -436,6 +497,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 <!-- no-clip guardrails -->
 <style data-inlined-from="css/03-style-03.css">
+/* REVIEW STYLE 03 | css/03-style-03.css */
 /* Prevent any text/image clipping throughout the app */
   body { overflow-x: hidden; }
 
@@ -533,6 +595,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 </style>
 <style data-inlined-from="css/04-style-04.css">
+/* REVIEW STYLE 04 | css/04-style-04.css */
 /* === Battle Guide Toggle Styles === */
   .battle-guide-btn{
     position: fixed;
@@ -709,6 +772,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 
 <style data-inlined-from="css/05-title-portraits-skill-hover-updates.css">
+/* REVIEW STYLE 05 | css/05-title-portraits-skill-hover-updates.css */
 /* Clearer main title */
   .wrap > h1 {
     font-size: 58px;
@@ -848,6 +912,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 
 <style data-inlined-from="css/06-select-square-portrait-locked-note-updates.css">
+/* REVIEW STYLE 06 | css/06-select-square-portrait-locked-note-updates.css */
 /* Shift the Battle Guide button left so it lines up better with the character cards. */
   #battleGuideBtn.battle-guide-btn {
     right: clamp(38px, 3.2vw, 56px);
@@ -924,6 +989,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 
 <style data-inlined-from="css/07-profile-square-and-niko-text-updates.css">
+/* REVIEW STYLE 07 | css/07-profile-square-and-niko-text-updates.css */
 /* Keep portrait height as laid out by the card, but make the visible image box square. */
   .card.has-character-portrait .character-card-portrait {
     object-fit: contain !important;
@@ -944,6 +1010,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 </style>
 
 <style data-inlined-from="css/08-square-portrait-final-fix.css">
+/* REVIEW STYLE 08 | css/08-square-portrait-final-fix.css */
 /* Final select-card portrait sizing: same height, square frame, bottom-centered art. */
   #selectPanel .card.has-character-portrait .character-card-portrait,
   .card.has-character-portrait .character-card-portrait {
@@ -974,6 +1041,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 </style>
 
 <style data-inlined-from="css/09-final-user-request-stat-and-square-portrait-fix.css">
+/* REVIEW STYLE 09 | css/09-final-user-request-stat-and-square-portrait-fix.css */
 /* Final portrait correction: the visible blue frame is a true square.
      The height is fixed, and the width is widened to that same value. */
   #selectPanel .card.has-character-portrait {
@@ -1094,6 +1162,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 </style>
 
 <style data-inlined-from="css/10-portrait-overlap-and-guide-alignment-final-fix.css">
+/* REVIEW STYLE 10 | css/10-portrait-overlap-and-guide-alignment-final-fix.css */
 /* Keep the select screen horizontally centered and make every card fill the same aligned width. */
   .wrap {
     margin-left: auto !important;
@@ -1245,6 +1314,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 </style>
 
 <style data-inlined-from="css/11-role-labels-under-portraits-final-update.css">
+/* REVIEW STYLE 11 | css/11-role-labels-under-portraits-final-update.css */
 #selectPanel > .row:first-child .tag strong {
     font-weight: 950 !important;
   }
@@ -1312,6 +1382,7 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 
 <style data-generated-by="v49-smaller-battle-log-portraits">
+/* REVIEW STYLE 12 | v49-smaller-battle-log-portraits */
 #battleLogPanel #log img:not(.log-avatar),
 #battleUI #log img:not(.log-avatar),
 .log img:not(.log-avatar) {
@@ -1325,11 +1396,13 @@ html, body { height:100%; margin:0; background:#151935; overflow:auto; }
 
 
 <script data-v56-intro-flags>
+// REVIEW SCRIPT 01 | data-v56-intro-flags
 window.__battleIntroCoverActive = true;
 window.__introCoverActiveV56 = true;
 </script>
 
 <style data-v56-intro-cover>
+/* REVIEW STYLE 13 | data-v56-intro-cover */
 html.intro-cover-v56-active,
 html.intro-cover-v56-active body,
 body.intro-cover-v56-active {
@@ -1471,6 +1544,7 @@ body.intro-cover-v56-active #dialogueOverlay {
 </style>
 
 <style id="niko-game-over-viewport-hardfix-v60">
+/* REVIEW STYLE 14 | niko-game-over-viewport-hardfix-v60 */
   #nikoGameOverFadeV57,
   #nikoGameOverScreenV57 {
     position: fixed !important;
@@ -1503,6 +1577,7 @@ body.intro-cover-v56-active #dialogueOverlay {
 
 
 <style id="battle-dialogue-hard-lock-v72">
+/* REVIEW STYLE 15 | battle-dialogue-hard-lock-v72 */
   body.battle-dialogue-hard-lock-v72 #menu,
   body.battle-dialogue-hard-lock-v72 #subMenu {
     pointer-events: none !important;
@@ -1517,6 +1592,7 @@ body.intro-cover-v56-active #dialogueOverlay {
 </style>
 
 <style id="battle-guide-character-page-v1">
+/* REVIEW STYLE 16 | battle-guide-character-page-v1 */
   .guide-page-controls {
     display: flex !important;
     flex-wrap: wrap !important;
@@ -1652,6 +1728,8 @@ body.intro-cover-v56-active #dialogueOverlay {
 
 
 
+
+<!-- REVIEW: PAGE STRUCTURE | Guide, party selection, battle interface, and dialogue elements. -->
 <button id="battleGuideBtn" aria-expanded="false" aria-controls="guideDrawer" class="battle-guide-btn" title="Show Battle Guide">
   <!-- Battle manual + shield icon -->
   <svg class="battle-guide-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
@@ -1773,9 +1851,15 @@ body.intro-cover-v56-active #dialogueOverlay {
 <div id="selectBgm"></div>
 <div id="prefightBgm"></div>
 <div id="bgm"></div>
+<script src="save-system.js"></script>
+
+<!-- REVIEW: GAME ENGINE | Shared battle rules and state; later wrappers remain in their original order. -->
 <script data-inlined-from="js/01-game-core.js">
+// REVIEW SCRIPT 02 | js/01-game-core.js
 (() => {
 
+
+  // REVIEW: CORE 01 | Shared action flags, stat tiers, roster, and rule constants.
   let _skipFollowUpThisAction = false;
   let _currentEnemyAttacker = null;
   let _actionInFlight = false;
@@ -2350,6 +2434,8 @@ function renderMimicSkillMenu(user, src){
   }
 
 
+
+  // REVIEW: CORE 02 | Build allies/enemies and capture references to page controls.
   // ---------- Builders ----------
   function buildStatsFromTiers(name, tiers) {
     const hpBase = TIER_HP[tiers.hp];
@@ -2411,6 +2497,7 @@ function renderMimicSkillMenu(user, src){
     if (name === "Miya Hagimoto") {
       // NEW: Hacker's Shield starts active for 3 (of Miya's) turns; Last Stand flag
       if (!unit.status) unit.status = {};
+      unit._openingPassivesStarted = false;
       unit.status.reflectAll = 3;           // repel attacks/ailments aimed at Miya
       unit._miyaLastStandUsed = false;      // once per battle
     }
@@ -2419,6 +2506,7 @@ function renderMimicSkillMenu(user, src){
       unit._nikoNotYetUsed = false;
 
       // Face It: active for Niko's first 3 turns
+      unit._openingPassivesStarted = false;
       unit._faceItTurns = 3;
 
       // Efficiency: 15% one-off proc per skill use to halve that skill's costs
@@ -2518,6 +2606,8 @@ function renderMimicSkillMenu(user, src){
   // `;
   // document.body.appendChild(shiftHint);
 
+
+  // REVIEW: CORE 03 | Music setup and playback; related SFX/portrait helpers follow the state definitions.
   // ---- BGM RESUME/PLAY HELPER ----
   window.BGM_DUCK_VOL   = window.BGM_DUCK_VOL   ?? 0.25;  // 25% when ducked
   window.BGM_NORMAL_VOL = window.BGM_NORMAL_VOL ?? 1.0;   // 100% normal
@@ -3285,14 +3375,16 @@ if (_dlgOverlay) {
 // ---------- end BGM ----------
 
 
+
+  // REVIEW: CORE 04 | Character skill definitions, followed by battle state and action helpers.
   // -------- Skills --------
   const NIKO_SKILLS = [
     { key:"gloom",       name:"Gloom",               cost:40,       kind:"aoeDespair",           target:"allEnemies",  chance:BRAINWASH_MED,      sfxUrl: "SFX/statDown.mp3",                 desc:"Medium (50%) chance of inflicting Despair on all foes." },
-    { key:"dontbottle",  name:"Don't bottle it up!", cost:0,        hpCost:87, kind:"aoeDamage", target:"allEnemies",  dmgMult:SKILL_HIGH_MULT,   sfxUrl: "SFX/aoeNormal.mp3",                desc:"Insane damage to all foes." },
+    { key:"dontbottle",  name:"Don't bottle it up!", cost:0,        hpCost:87, kind:"aoeDamage", target:"allEnemies",  dmgMult:SKILL_INSANE_MULT,   sfxUrl: "SFX/aoeNormal.mp3",                desc:"Insane damage to all foes." },
     { key:"cutting",     name:"Cutting Edge",        cost:45,       kind:"aoeHighCrit",          target:"allEnemies",                             sfxUrl: "SFX/knife.mp3",                    desc:"Medium (50%) chance to CRIT all enemies." },
     { key:"riskit",      name:"Risk it?",            cost:223,      kind:"percentHP",            target:"enemy",       selfDefCrashTurns:1,       sfxUrl: "SFX/heartShatter.mp3",             desc:"Reduce target's HP by 30% of its maximum HP; Niko's DEF drops to very low for 1 turn. Can only be used once per battle and only during the opening phase while both Itachi Himura and Dr. Hirose Yuki are alive and the Soulless Survivor is only observing." },
     { key:"vengeance",   name:"Vengeance",           cost:30,       kind:"teamAtkUp",            target:"none",        turns:3,                   sfxUrl: "SFX/statUp.mp3",                   desc:"Increase all allies' ATK for 3 turns." },
-    { key:"science",     name:"Science Project",     cost:30,       kind:"teamDefUp",            target:"allAllies",   turns:3,                   sfxUrl: "SFX/statUp.mp3,",                  desc:"Raise DEF for all allies for 3 turns." },
+    { key:"science",     name:"Science Project",     cost:30,       kind:"teamDefUp",            target:"allAllies",   turns:3,                   sfxUrl: "SFX/statUp.mp3",                  desc:"Raise DEF for all allies for 3 turns." },
     { key:"truth",       name:"Truth Serum",         cost:50,       kind:"followBoost",          target:"self",        turns:6,                   sfxUrl: "SFX/statUp.mp3",                   desc:"Raises Niko, Towa and Toshiro's chance to trigger a follow-up for 6 turns." },
     { key:"notyet",      name:"Not yet",             passive:true,  kind:"passiveEndureOnce",    target:"none",                                                                                                                   desc:"Once per battle, Niko survives a lethal hit at 1 HP." },
     { key:"faceit",      name:"Face It",             passive:true,  kind:"passiveFaceIt",        target:"none",                                                                                                                   desc:"For the first 3 turns, foes have reduced accuracy when attacking her." },
@@ -3314,7 +3406,7 @@ if (_dlgOverlay) {
     { key:"gladiator",  name:"Gladiator's Charm",  passive:true,           kind:"passiveHotaruShield", target:"none",                                                                                                                               desc:"Starts battle with a 1000 HP shield that blocks damage (not ailments)." },
     { key:"angryHome",  name:"Angry Home",         passive:true,           kind:"passiveAngryHome",    target:"none",                                                                                                                               desc:"While Hotaru has Rage, her ATK is doubled." },
     { key:"surprise",   name:"Surprise!",          cost:0,   passive:true, kind:"passiveSurprise",     target:"none",                                                                                                                               desc:"Double-damage strike this turn. 10-turn cooldown." },
-    { key:"tsundere",   name:"Tsundere Special",   cost:20,                kind:"tauntSelf",           target:"self",        turns:1,                                               sfxUrl: "SFX/damselInDistress",       desc:"Foes will target Hotaru for this turn, note: AOE attacks can still be triggered while using this." },
+    { key:"tsundere",   name:"Tsundere Special",   cost:20,                kind:"tauntSelf",           target:"self",        turns:1,                                               sfxUrl: "SFX/damselInDistress.mp3",       desc:"Foes will target Hotaru for this turn, note: AOE attacks can still be triggered while using this." },
     { key:"smoke",      name:"Smoke Screen",       cost:87,                kind:"smokeAll",            target:"allEnemies",  turns:3,                                               sfxUrl: "SFX/statDown.mp3",           desc:"Halve all foes' speed and accuracy for 3 turns." },
     { key:"homerun",    name:"Home Run",           cost:52,                kind:"homeRun",             target:"enemy",       dmgMult:4,                                              sfxUrl: "SFX/crit.mp3",               desc:"Quadruple damage with medium (50%) chance of CRIT in current attack." },
     { key:"leverage",   name:"Leverage",           cost:0,   hpCost:110,    kind:"leverage",            target:"allEnemies",  turns:3,                                               sfxUrl: "SFX/statDown.mp3",           desc:"Greatly lower all foes ATK/DEF for 3 turns." },
@@ -3427,12 +3519,14 @@ if (_dlgOverlay) {
     CANDIDATE_ORDER.forEach(name => {
       const card = document.createElement("div");
       card.className = "card";
+      card.classList.toggle("selected", selectedNames.has(name));
       addCharacterPortraitToCard(card, name);
       addSelectRoleUnderPortrait(card, name);
       const header = document.createElement("div"); header.className = "card-header";
       const label = document.createElement("div");
       label.innerHTML = `<strong>${name}</strong>`;
-      const pill = document.createElement("div"); pill.className = "pill"; pill.textContent = "Click to Select";
+      const pill = document.createElement("div"); pill.className = "pill"; pill.textContent = selectedNames.has(name) ? "Selected" : "Click to Select";
+      if (selectedNames.has(name)) pill.style.background = "#3553b7";
       header.append(label, pill);
       const tiers = document.createElement("div"); tiers.className = "tiers"; tiers.innerHTML = tierLine(name);
       const skills = document.createElement("div");
@@ -4015,11 +4109,13 @@ const ENEMY_DEFEAT_PORTRAITS = {
         const prevVis = base.style.visibility;
         base.style.visibility = 'hidden';
 
-        // Show hurt portrait
+        // Clear the startup hidden attribute before showing the hurt portrait.
+        wrap.hidden = false;
         img.src = src;
 
         const dur = Math.max(ms || 0, (typeof HURT_MIN_MS === 'number' ? HURT_MIN_MS : 0));
         setTimeout(() => {
+          wrap.hidden = true;
           wrap.style.display = 'none';
           img.src = '';
           base.style.visibility = prevVis || '';
@@ -4187,8 +4283,49 @@ function emotionlessHuskBlocksAilment(u) {
   return true;
 }
 
+// Shared by direct ailments and generic debuffs so protection cannot be bypassed.
+const HARMFUL_STATUSES = new Set(["burn", "stun", "brainwash", "rage", "despair",
+  "atkDown", "defDown", "defCrash", "accDown", "accWeaken", "spdWeaken"]);
+const AILMENT_STATUSES = new Set(["burn", "stun", "brainwash", "rage", "despair", "defCrash"]);
+
+  // REVIEW: CORE 05 | Status protection, ailment application, and story dialogue definitions.
+function statusApplicationBlocked(unit, key, turns = 1, reflectEffect = null) {
+  if (!unit || !unit.alive) return true;
+  if (!HARMFUL_STATUSES.has(key) || turns <= 0) return false;
+
+  if (unit.kind === "ally") {
+    // Firewall takes precedence over reflection, matching damage protection.
+    if ((unit.status?.firewall || 0) > 0) {
+      log(`[Firewall] ${unit.name} is protected, ${key.toUpperCase()} blocked.`);
+      return true;
+    }
+    const attacker = _currentEnemyAttacker;
+    if ((unit.status?.reflectAll || 0) > 0 && attacker?.alive && attacker !== unit) {
+      if (reflectEffect) reflectEffect(attacker);
+      else if (key === "burn") inflictBurn(attacker, turns);
+      else if (key === "stun") inflictStun(attacker, turns);
+      else if (["brainwash", "rage", "despair"].includes(key)) setExclusiveAilment(attacker, key, turns, true);
+      else addTurns(attacker, key, turns);
+      log(`[Hacker's Shield] ${unit.name} repels ${key.toUpperCase()} to ${attacker.name}.`);
+      return true;
+    }
+  }
+  if (isSS(unit)) {
+    if (ssObserverActive()) {
+      maybeAnnounceSSObserverOnce({});
+      return true;
+    }
+    if (AILMENT_STATUSES.has(key) && ssAnalyticalCurrentIs("IMMUNE_AIL")) {
+      log(`[Analytical Thinking] ${unit.name} is immune to ${key.toUpperCase()}.`);
+      return true;
+    }
+  }
+  return false;
+}
+
 function inflictBurn(u, turns = BURN_TURNS) {
   if (!u || !u.alive) return false;
+  if (statusApplicationBlocked(u, "burn", turns)) return false;
   if (isSS(u)) { log(`${u.name} is immune to Burn.`); return false; }
   if (emotionlessHuskBlocksAilment(u)) return false;
   if (u._immuneBurn) { log(`${u.name} is immune to Burn.`); return false; }
@@ -4198,17 +4335,14 @@ function inflictBurn(u, turns = BURN_TURNS) {
 
 function inflictStun(u, turns = 1) {
   if (!u || !u.alive) return false;
+  if (statusApplicationBlocked(u, "stun", turns)) return false;
   if (emotionlessHuskBlocksAilment(u)) return false;
   u.stunTurns = (u.stunTurns | 0) + turns;
   return true;
 }
 
-function maybeBoostAllyDamage(user, dmg){
-  if (user?.status?.teamTriple > 0) {
-    user.status.teamTriple -= 1;      // one boosted action
-    return Math.floor(dmg * 3);
-  }
-  return dmg;
+function maybeBoostAllyDamage(user, dmg, actionMultiplier = useTeamTriple(user)) {
+  return Math.floor(dmg * actionMultiplier);
 }
 
 
@@ -4422,6 +4556,8 @@ function biasedPickAllyTarget(tauntState) {
   let _ssSummonedTotal = 0;
   let _ssMoreVictimsChance = 0.07;
 
+
+  // REVIEW: CORE 06 | Boss Analytical Thinking eligibility and battle-dialogue input locking.
   const SS_ANALYTICAL_POOL = ['IMMUNE_AIL','REPEL_DREAD','REPEL_CRASH','REPEL_BASIC','SPAWN_ON_HEAL'];
   const SS_ANALYTICAL_SWITCH_INTERVAL = 2;
 
@@ -4803,6 +4939,8 @@ function biasedPickAllyTarget(tauntState) {
    * Generic logger-driven dialogue: disables buttons ("pauses" player),
    * duck BGM, Enter=next, then calls `done()` at the end.
    */
+
+  // REVIEW: CORE 07 | Defeat/post-summons dialogue and the boss HP transition gates.
   function runDefeatDialogue(lines, done) {
     beginBattleDialogueLock();
     let idx = 0, finished = false;
@@ -5392,7 +5530,7 @@ async function ensurePhase2DialogueBeforeEnemyPhase() {
   try {
     // Only if SS exists and we haven't done the phase-2 cutover yet.
     const ss = (enemies || []).find(e => e && e.name === "Soulless Survivor" && e.alive);
-    if (!ss || window._ssPhase2Done) return;
+    if (!ss || window._ssPhase2Done || ss.hp > 25000 || !_postSummonsDialogueDone) return;
 
     // Both summons must be down (same check style as your summon wrap-up)
     const bothDown = (typeof summonedAliveCount === "function")
@@ -5829,10 +5967,14 @@ function transitionToBlack(){
 
       ss._phase2 = true; // your existing phase-2 flag for rules/styling
 
-      // Permanent ATK/DEF increase
+      // ATK uses the permanent 1.5x phase multiplier in atkOf().
+      // DEF must update the canonical field consumed by defOf().
+      if (ss._phase2PermBuff) return;
       const mult = (window.SS_PHASE2_ATK_DEF_MULT ?? 2);
 
-      // Be defensive about property names
+      ss.baseDef = Math.max(1, Math.round(ss.baseDef * mult));
+
+      // Keep legacy display fields in sync
       try {
         if (typeof ss.atk === "number") ss.atk = Math.max(1, Math.round(ss.atk * mult));
         if (typeof ss.ATK === "number") ss.ATK = Math.max(1, Math.round(ss.ATK * mult));
@@ -5872,7 +6014,7 @@ function transitionToBlack(){
     if (_ssPhase2Triggered) return window._ssPhase2DialoguePromiseV74 || false;
     const ss = enemies.find(isSS);
     if (!ss || !ss.alive) return false;
-    if (ss.hp > 25000) return false;
+    if (ss.hp > 25000 || ssObserverActive() || !_postSummonsDialogueDone) return false;
 
     _ssPhase2Triggered = true;
     window._ssPhase2DialoguePromiseV74 = new Promise(resolve => {
@@ -5978,6 +6120,7 @@ function transitionToBlack(){
   }
 
   function log(msg) {
+    window.RpgSaves.message(msg);
     // Accept either a plain string or an object like:
     // { text: "Niko: ...", fontSize: '18px', img: 'path.png', speaker: 'Niko Himura', typewriter: true, typeSpeed: 20, enemyLog: true }
     let text = typeof msg === "object" && msg !== null ? String(msg.text ?? "") : String(msg);
@@ -6089,6 +6232,8 @@ function transitionToBlack(){
     return enemies.some(e => e.name === "Soulless Survivor" && e.alive);
   }
 
+
+  // REVIEW: CORE 08 | Effective attack/defense, damage arithmetic, accuracy, and critical hits.
   // Effective stats with statuses
   function atkOf(unit) {
     let atk = unit.baseAtk + ATK_GLOBAL_BONUS + ((unit && unit.kind === "enemy") ? ENEMY_DEBUG_ATK_BONUS : 0);
@@ -6124,7 +6269,7 @@ function transitionToBlack(){
         if (unit.status.defDown > 0) def *= DEF_DOWN_MULT;
       }
     } else {
-      if (unit.status.defDown > 0) def *= DEF_DOWN_MULT;
+      if (unit.status.defDown > 0 && !(isSS(unit) && unit._phase2)) def *= DEF_DOWN_MULT;
       if (unit.status.defUp   > 0) def *= DEF_UP_MULT;   // NEW
     }
     return Math.max(1, Math.round(def));
@@ -6449,6 +6594,8 @@ function transitionToBlack(){
   }
 
 
+
+  // REVIEW: CORE 09 | Status duration rules, recurring summons, and ally/enemy turn-start upkeep.
   // ----- Duration display helpers -----
   const FIXED_TURN_STATUSES_ALLY  = new Set([
     "atkUp","atkDown","defUp","defDown","defCrash","defInsane",
@@ -6714,21 +6861,7 @@ function createTestSubject(label) {
    * - `silent` avoids extra logs (callers usually log themselves).
    */
   function setExclusiveAilment(u, key, turns=1, silent=true){
-    if (isSS(u) && ssObserverActive()) { 
-      maybeAnnounceSSObserverOnce({}); 
-      return; 
-    }
-
-    if (!EXCLUSIVE_AIL.includes(key)) return false;
-    if (u._immuneAllAilments || ((key === "rage" || key === "despair") && u._immuneRageDespair)) {
-      if (!silent) log(`${u.name} is unaffected (Emotionless Husk).`);
-      return false;
-    }
-    if (!u.status) u.status = {};
-    clearExclusiveAilments(u, key);
-    u.status[key] = Math.max(u.status[key] || 0, turns);
-    ensureAilmentProb(u, key);
-    if (!EXCLUSIVE_AIL.includes(key)) return false;
+    if (!EXCLUSIVE_AIL.includes(key) || statusApplicationBlocked(u, key, turns)) return false;
     if (u._immuneAllAilments || ((key === "rage" || key === "despair") && u._immuneRageDespair)) {
       if (!silent) log(`${u.name} is unaffected (Emotionless Husk).`);
       return false;
@@ -6742,6 +6875,7 @@ function createTestSubject(label) {
 
 
   function addTurns(unit, key, turns) {
+    if (statusApplicationBlocked(unit, key, turns)) return;
 
     if (isSS(unit) && ssObserverActive()) { 
       maybeAnnounceSSObserverOnce({}); 
@@ -6753,21 +6887,6 @@ function createTestSubject(label) {
       return;
     }
 
-    // If enemies are acting and they try to afflict Miya while Hacker's Shield is up,
-    // reflect that ailment/debuff back to the current enemy attacker.
-    if (unit.kind === "ally" && ENEMY_LOG && (unit.status?.reflectAll || 0) > 0) {
-      const reflectable = new Set(["atkDown","defDown","accDown","spdWeaken","brainwash","rage","despair","burn"]);
-      if (reflectable.has(key) && _currentEnemyAttacker && _currentEnemyAttacker.alive) {
-        addTurns(_currentEnemyAttacker, key, turns);
-        log(`[Hacker's Shield] ${unit.name} repels ${key.toUpperCase()} to ${_currentEnemyAttacker.name}.`);
-        return;
-      }
-    }
-    // Team Firewall blocks incoming status on allies
-    if (unit.kind === "ally" && (unit.status?.firewall || 0) > 0) {
-      log(`[Firewall] ${unit.name} is protected, ${key.toUpperCase()} blocked.`);
-      return;
-    }
     // Enforce exclusivity for ailments
     if (EXCLUSIVE_AIL.includes(key)) {
       setExclusiveAilment(unit, key, Math.max(1, turns), /*silent=*/true);
@@ -6821,11 +6940,16 @@ function createTestSubject(label) {
       }
     }
 
+    // Opening passives start before turn 1; their first upkeep must not spend a turn.
+    const firstOpeningTurn = a._openingPassivesStarted === false;
+    if (firstOpeningTurn) a._openingPassivesStarted = true;
+
     // Track CRIT boost before decrement
     const hadCritBoost = (a.status.critBoost || 0) > 0;
     const hadReflect = (a.status.reflectAll || 0) > 0;
     // Decrement timed statuses
     for (const k of ["atkUp","atkDown","defUp","defDown","defCrash","defInsane","followBoost","spdUp","spdBoost","accUp","accDown","critBoost","reflectAll","firewall"]) {
+      if (k === "reflectAll" && firstOpeningTurn) continue;
       if (a.status[k] > 0) a.status[k]--;
     }
 
@@ -6843,7 +6967,7 @@ function createTestSubject(label) {
       log(`Hotaru: Surprise! is active, her next Attack this turn deals double damage.`);
     }
     // Niko: Face It duration ticks on her own turns
-    if (a.name === "Niko Himura" && typeof a._faceItTurns === "number" && a._faceItTurns > 0) {
+    if (!firstOpeningTurn && a.name === "Niko Himura" && typeof a._faceItTurns === "number" && a._faceItTurns > 0) {
       a._faceItTurns -= 1;
       if (a._faceItTurns === 0) {
         log(`Face It has ended, foes regain their usual accuracy against Niko.`);
@@ -7027,6 +7151,8 @@ function createTestSubject(label) {
     }
   }
 
+
+  // REVIEW: CORE 10 | Render battle state and build command/target/skill/item menus.
   // ---------- Rendering ----------
   function renderBars() {
     try {
@@ -7281,6 +7407,7 @@ function createTestSubject(label) {
       UI.menu.append(btnSkills);
     }
     setMainActionButtonsDisabledForDialogue();
+    window.RpgSaves.ready();
   }
 
   function renderRageMenu(actor) {
@@ -7408,6 +7535,7 @@ function createTestSubject(label) {
   }
 
   function onItemTargetChosen(item, side, idx) {
+    window.RpgSaves.intent("item", item.key, [(side === "ally" ? party : enemies)[idx]?.name].filter(Boolean));
     try {
     const actor = party[currentActorIdx];
     if (actor && actor.name) setTurnBanner(actor.name, "ally");
@@ -7617,6 +7745,7 @@ function createTestSubject(label) {
   }
 
   function useItemAllAllies(item) {
+    window.RpgSaves.intent("item", item.key, party.filter(p => p.alive).map(p => p.name));
     if (item.qty <= 0) return false;
     const actor = party[currentActorIdx];
     if (actor && actor.name) setTurnBanner(actor.name, "ally");
@@ -7652,6 +7781,7 @@ function createTestSubject(label) {
   }
   
   function useItemAllEnemies(item) {
+    window.RpgSaves.intent("item", item.key, enemies.filter(e => e.alive).map(e => e.name));
     const actor = party[currentActorIdx];
     if (actor && actor.name) setTurnBanner(actor.name, "ally");
     if (item.qty <= 0) return false;
@@ -7870,6 +8000,7 @@ function createTestSubject(label) {
 
 
   function onTargetChosen(who, idx) {
+    window.RpgSaves.intent(_pickCtx?.action || selectedAction, (_pickCtx?.skill || pendingSkill)?.key, [(who === "ally" ? party : enemies)[idx]?.name].filter(Boolean));
     const actor = party[currentActorIdx];
     const action = _pickCtx?.action ?? selectedAction;
     const skill  = _pickCtx?.skill  ?? pendingSkill;
@@ -8035,7 +8166,16 @@ function createTestSubject(label) {
   function spendEnergy(user, cost) { user.en = clamp(user.en - (cost||0), 0, user.maxEN); }
   function spendHP(user, hp) { user.hp = clamp(user.hp - (hp||0), 1, user.maxHP); } // pre-checked to never kill
 
+  function reflectSkillDamage(user, damage) {
+    if (!user || !user.alive) return;
+    const result = applyDamageToAlly(user, Math.max(1, Math.floor(damage)));
+    if (result.died) user.alive = false;
+    log(`[Analytical Thinking] ${user.name} takes ${result.delta} reflected damage.`);
+    renderBars();
+  }
+
   function applyCrash(foe) {
+    if (statusApplicationBlocked(foe, "stun", 1, applyCrash) || emotionlessHuskBlocksAilment(foe)) return false;
     foe.stunTurns = (foe.stunTurns | 0) + 1;
     foe.status = foe.status || {};
     foe.status.defDown = Math.max((foe.status.defDown | 0), 1);
@@ -8044,11 +8184,13 @@ function createTestSubject(label) {
       ensureAilmentProb(foe, "defDown");
     };
     log(`[Crash] ${foe.name} has received too many programs, DEF down for 1 turn.`);
+    return true;
   }
 
   function maybeBrainwash(foe) {
-    setExclusiveAilment(foe, "brainwash", 1, /*silent=*/true);
+    if (!setExclusiveAilment(foe, "brainwash", 1, /*silent=*/true)) return false;
     log(`[Brainwash] ${foe.name} is confused, it will act to your benefit for one enemy phase!`);
+    return true;
   }
 
 
@@ -8076,7 +8218,10 @@ function createTestSubject(label) {
   }
 
 
+
+  // REVIEW: CORE 11 | Player skill validation, resource costs, effects, and action completion.
   function useSkill(sk, target = null) {
+    window.RpgSaves.intent("skill", sk.key || sk.name, target ? [target.name] : []);
     
     const isReviveSkill = (sk.kind && /revive/i.test(sk.kind)) || (sk.key && /revive/i.test(sk.key));
     if (target && target.kind === "ally" && !target.alive && !isReviveSkill) {
@@ -8266,8 +8411,9 @@ function createTestSubject(label) {
         for (const foe of living(enemies)) {
           if (ssStatusBlockedNow(foe)) { maybeAnnounceSSObserverOnce(_guard); continue; }
           if (Math.random() < (sk.chance || 0.4)) {
-            setExclusiveAilment(foe, "despair", 1, /*silent=*/true);
-            log(`${foe.name} is afflicted with Despair.`);
+            if (setExclusiveAilment(foe, "despair", 1, /*silent=*/true)) {
+              log(`${foe.name} is afflicted with Despair.`);
+            }
           } else {
             log(`${foe.name} resists the gloom.`);
           }
@@ -8384,11 +8530,7 @@ function createTestSubject(label) {
         if (ssAnalyticalCurrentIs('REPEL_CRASH')) {
           log(`[Analytical Thinking] Soulless Survivor repels the Crash attack!`);
           log(`Toshiro "Sorry Miya, our team leader is a bit foolish."`);
-          if (user && user.alive && typeof pendingDamage === "number") {
-            user.hp = Math.max(0, user.hp - Math.max(1, Math.floor(pendingDamage)));
-            if (user.hp === 0) user.alive = false;
-            renderBars();
-          }
+          reflectSkillDamage(user, dmg);
           break;
         }
         const before = target.hp;
@@ -8430,11 +8572,7 @@ function createTestSubject(label) {
           if (ssAnalyticalCurrentIs('REPEL_CRASH')) {
             log(`[Analytical Thinking] Soulless Survivor repels the Crash attack!`);
             log(`Toshiro "You\'ll feel my wrath after this."`);
-            if (user && user.alive && typeof pendingDamage === "number") {
-              user.hp = Math.max(0, user.hp - Math.max(1, Math.floor(pendingDamage)));
-              if (user.hp === 0) user.alive = false;
-              renderBars();
-            }
+            reflectSkillDamage(user, dmg);
             break;
           }
           const before = foe.hp;
@@ -8608,76 +8746,62 @@ function createTestSubject(label) {
         break;
       }
       case "dreadfulSingle": {
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "You fool..."`);
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
         playSfxKey("skill7");
         const tripleMult = useTeamTriple(user);
         if (!target) { pendingSkill = sk; renderTargetSelect("enemy"); return; }
 
         const originalBase = user.baseAtk;
-        if (sk.atkTierOverride && TIER_ATK[sk.atkTierOverride]) {
-          user.baseAtk = TIER_ATK[sk.atkTierOverride];
-        }
-
-        if (!hitCheck(user, target)) {
-          log(`[All Bark All Bite] ${target.name} dodges!`);
-          user.baseAtk = originalBase;
-          break;
-        }
-
-        let dmg = damageFormula(user, target, sk.dmgMult);
-        dmg = Math.floor(dmg * tripleMult);
-        let mult = consumeSurpriseIfActive(user);
-        dmg = Math.floor(dmg * mult);
-
-        if (ssAnalyticalCurrentIs('REPEL_DREAD')) {
-          log(`[Analytical Thinking] Soulless Survivor repels the Dreadful attack!`);
-          log(`Toshiro "Read comprehension isn\'t your forte I\'m assuming?"`);
-          if (user && user.alive && typeof pendingDamage === "number") {
-            user.hp = Math.max(0, user.hp - Math.max(1, Math.floor(pendingDamage)));
-            if (user.hp === 0) user.alive = false;
-            renderBars();
+        try {
+          if (sk.atkTierOverride && TIER_ATK[sk.atkTierOverride]) {
+            user.baseAtk = TIER_ATK[sk.atkTierOverride] + debugAttackBonus(user);
           }
-          break;
-        }
-        const before = target.hp;
-        target.hp = clamp(target.hp - dmg, 0, target.maxHP);
-        const _delta = before - target.hp;  // or foe.hp if in a loop
-        if (_delta > 0) queueHurtFlash(target.name, 2000);
 
-        if (isSS(target)) {
-          const delta = before - target.hp;
-          // noteSSDamage(target, delta);
-          // if (handleSSFirstHitIfNeeded(target, delta, () => advanceAfterPlayerAction())) { user.baseAtk = originalBase; return; }
-        }
+          if (!hitCheck(user, target)) {
+            log(`[All Bark All Bite] ${target.name} dodges!`);
+            break;
+          }
 
-        log(`[All Bark All Bite] ${target.name} takes ${before - target.hp} damage.`);
-        if (Math.random() < BRAINWASH_MED) maybeBrainwash(target);
-        if (target.hp === 0) {
-          target.alive = false;
-          log(`${target.name} is down!`);
-          renderBars();
-          // NEW: pause for summon defeat dialogue if needed, then resume
-          if (handleSummonDefeatIfNeeded(target.name, () => {
-            // resume exactly what you would do next here
-            // (in most player actions that means advanceAfterPlayerAction)
-            advanceAfterPlayerAction();
-          })) return;
+          let dmg = damageFormula(user, target, sk.dmgMult);
+          dmg = Math.floor(dmg * tripleMult);
+          let mult = consumeSurpriseIfActive(user);
+          dmg = Math.floor(dmg * mult);
+
+          if (ssAnalyticalCurrentIs('REPEL_DREAD')) {
+            log(`[Analytical Thinking] Soulless Survivor repels the Dreadful attack!`);
+            log(`Toshiro "Read comprehension isn\'t your forte I\'m assuming?"`);
+            reflectSkillDamage(user, dmg);
+            break;
+          }
+          const before = target.hp;
+          target.hp = clamp(target.hp - dmg, 0, target.maxHP);
+          const _delta = before - target.hp;  // or foe.hp if in a loop
+          if (_delta > 0) queueHurtFlash(target.name, 2000);
+
+          if (isSS(target)) {
+            const delta = before - target.hp;
+            // noteSSDamage(target, delta);
+            // if (handleSSFirstHitIfNeeded(target, delta, () => advanceAfterPlayerAction())) { user.baseAtk = originalBase; return; }
+          }
+
+          log(`[All Bark All Bite] ${target.name} takes ${before - target.hp} damage.`);
+          if (Math.random() < BRAINWASH_MED) maybeBrainwash(target);
+          if (target.hp === 0) {
+            target.alive = false;
+            log(`${target.name} is down!`);
+            renderBars();
+            // NEW: pause for summon defeat dialogue if needed, then resume
+            if (handleSummonDefeatIfNeeded(target.name, () => {
+              // resume exactly what you would do next here
+              // (in most player actions that means advanceAfterPlayerAction)
+              advanceAfterPlayerAction();
+            })) return;
+          }
+        } finally {
+          user.baseAtk = originalBase;
         }
-        user.baseAtk = originalBase;
         break;
       }
       case "dreadfulAoe": {
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "There goes our turn..."`);
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
         playSfxKey("skill7");
         const tripleMult = useTeamTriple(user);
         log(`[One-woman Army] Hotaru unleashes devastation!`);
@@ -8687,11 +8811,9 @@ function createTestSubject(label) {
           if (ssAnalyticalCurrentIs('REPEL_DREAD')) {
             log(`[Analytical Thinking] Soulless Survivor repels the Dreadful attack!`);
             log(`Toshiro "Guess I overestimated you."`);
-            if (user && user.alive && typeof pendingDamage === "number") {
-              user.hp = Math.max(0, user.hp - Math.max(1, Math.floor(pendingDamage)));
-              if (user.hp === 0) user.alive = false;
-              renderBars();
-            }
+            const reflector = enemies.find(isSS);
+            const reflectedDamage = damageFormula(user, reflector, sk.dmgMult) * mult * tripleMult;
+            reflectSkillDamage(user, reflectedDamage);
             break;
           }
         for (const foe of living(enemies)) {
@@ -8826,18 +8948,12 @@ function createTestSubject(label) {
         break;
       }
       case "inflictRage": {
-        // Analytical Thinking: Ailment immunity
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "Sigh. When I say nullifies ANY attempts at inflicting status ailments. I mean it."`)
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
         playSfxKey("skill15");
         if (!target || target.kind !== "enemy") { pendingSkill = sk; renderTargetSelect("enemy"); return; }
         if (Math.random() < (sk.chance || 0.7)) {
-          setExclusiveAilment(target, "rage", 1, /*silent=*/true);
-          log(`[Vengeance] ${target.name} is enraged and will fight mindlessly on its action.`);
+          if (setExclusiveAilment(target, "rage", 1, /*silent=*/true)) {
+            log(`[Vengeance] ${target.name} is enraged and will fight mindlessly on its action.`);
+          }
         } else {
           log(`[Vengeance] ${target.name} resists the rage.`);
         }
@@ -8907,13 +9023,14 @@ function createTestSubject(label) {
         return; // don't advance turn yet
       }
       case "akioAoeInsane": {
+        const actionMultiplier = useTeamTriple(user);
         playSfxKey("skill2");
         // let ssWasHit=false, ssRef=null, ssTotal=0;
         let killedSummon = null;
         for (const foe of living(enemies)) {
           if (!hitCheck(user, foe)) { log(`${foe.name} dodges!`); continue; }
           let dmg = damageFormula(user, foe, SKILL_INSANE_MULT); // "insane"
-          dmg = maybeBoostAllyDamage(user, dmg);
+          dmg = maybeBoostAllyDamage(user, dmg, actionMultiplier);
           const before = foe.hp;
           foe.hp = clamp(foe.hp - dmg, 0, foe.maxHP);
           const delta = before - foe.hp; if (delta > 0) queueHurtFlash(foe.name, 2000);
@@ -8939,20 +9056,14 @@ function createTestSubject(label) {
         break;
       }
       case "akioAoeInsaneBurn": {
-        // Analytical Thinking: Ailment immunity
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "Foolish..."`);
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
+        const actionMultiplier = useTeamTriple(user);
         playSfxKey("skill8");
         // let ssWasHit=false, ssRef=null, ssTotal=0;
         let killedSummon = null;
         for (const foe of living(enemies)) {
           if (!hitCheck(user, foe)) { log(`${foe.name} dodges!`); continue; }
           let dmg = damageFormula(user, foe, SKILL_INSANE_MULT);
-          dmg = maybeBoostAllyDamage(user, dmg);
+          dmg = maybeBoostAllyDamage(user, dmg, actionMultiplier);
           const before = foe.hp;
           foe.hp = clamp(foe.hp - dmg, 0, foe.maxHP);
           const delta = before - foe.hp; if (delta > 0) queueHurtFlash(foe.name, 2000);
@@ -8971,19 +9082,13 @@ function createTestSubject(label) {
         break;
       }
       case "akioSingleExtremeDespair": {
-        // Analytical Thinking: Ailment immunity
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "And to think I used to ask logic puzzles to you..."`);
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
+        const actionMultiplier = useTeamTriple(user);
         playSfxKey("skill9");
         if (!target) { pendingSkill = sk; renderTargetSelect("enemy"); return; }
         if (!hitCheck(user, target)) { log(`${target.name} dodges!`); break; }
 
         let dmg = damageFormula(user, target, 2.4);
-        dmg = maybeBoostAllyDamage(user, dmg);
+        dmg = maybeBoostAllyDamage(user, dmg, actionMultiplier);
         const before = target.hp;
         target.hp = clamp(target.hp - dmg, 0, target.maxHP);
         const delta = before - target.hp; if (delta > 0) queueHurtFlash(target.name, 2000);
@@ -8997,8 +9102,9 @@ function createTestSubject(label) {
         log(`${target.name} takes ${before - target.hp} damage.`);
         // Medium chance of Despair
         if (Math.random() < 0.5) {
-          setExclusiveAilment(target, "despair", 1, /*silent=*/true);
-          log(`[Despair] ${target.name} is shaken and may waste actions.`);
+          if (setExclusiveAilment(target, "despair", 1, /*silent=*/true)) {
+            log(`[Despair] ${target.name} is shaken and may waste actions.`);
+          }
         }
         if (target.hp === 0) {
           target.alive = false;
@@ -9014,18 +9120,13 @@ function createTestSubject(label) {
         break;
       }
       case "rageAllEnemiesMedium": {
-        // Analytical Thinking: Ailment immunity
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "Should I take over? You might not be cut out for leadership."`);
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
         playSfxKey("skill14");
         let any=false;
         let killedSummon = null;
         for (const foe of living(enemies)) {
-          if (Math.random() < 0.50) { setExclusiveAilment(foe, "rage", 1, true); any = true; log(`${foe.name} is enraged!`); }
+          if (Math.random() < 0.50) {
+            if (setExclusiveAilment(foe, "rage", 1, true)) { any = true; log(`${foe.name} is enraged!`); }
+          }
           else { log(`${foe.name} resists the provocation.`); }
         }
         renderBars();
@@ -9045,13 +9146,6 @@ function createTestSubject(label) {
       }
       // ---- Toshiro
       case "ultimateAilment": {
-        // Analytical Thinking: Ailment immunity
-        if (ssAnalyticalCurrentIs('IMMUNE_AIL')) {
-          log(`[Analytical Thinking] Soulless Survivor nullifies status ailments.`);
-          log(`Toshiro "If only you listened...`);
-          // skip applying the ailment
-          break; // or `continue` if you're in a loop of effects
-        }
         playSfxKey("skill14");
         const base = sk.chance ?? 0.50;
         const bonus = (user._toshiroBetterOdds ? 0.05 : 0); // "Better odds"
@@ -9064,8 +9158,9 @@ function createTestSubject(label) {
           const roll = Math.random();
           if (roll < p) {
             const pick = randChoice(["brainwash","rage","despair"]);
-            setExclusiveAilment(foe, pick, 1, /*silent=*/true);
-            log(`[Ultimate Ailment] ${foe.name} is afflicted with ${pick.toUpperCase()}.`);
+            if (setExclusiveAilment(foe, pick, 1, /*silent=*/true)) {
+              log(`[Ultimate Ailment] ${foe.name} is afflicted with ${pick.toUpperCase()}.`);
+            }
           } else {
             log(`[Ultimate Ailment] ${foe.name} resists.`);
           }
@@ -9191,11 +9286,7 @@ function createTestSubject(label) {
           if (ssAnalyticalCurrentIs('REPEL_CRASH')) {
             log(`[Analytical Thinking] Soulless Survivor repels the Crash attack!`);
             log(`Toshiro "You. Idiot."`);
-            if (user && user.alive && typeof pendingDamage === "number") {
-              user.hp = Math.max(0, user.hp - Math.max(1, Math.floor(pendingDamage)));
-              if (user.hp === 0) user.alive = false;
-              renderBars();
-            }
+            reflectSkillDamage(user, dmg);
             break;
           }
           const before = foe.hp;
@@ -9236,6 +9327,8 @@ function createTestSubject(label) {
   }
 
 
+
+  // REVIEW: CORE 12 | Follow-up actions and automatic behavior such as Brainwash.
   // ---------- Follow-up system (unchanged) ----------
   function maybeTriggerFollowUp(initiatorIdx) {
     const initiator = party[initiatorIdx];
@@ -9403,6 +9496,8 @@ function createTestSubject(label) {
     }
   }
 
+
+  // REVIEW: CORE 13 | Opening summons, phase-dependent action counts, and victory/defeat checks.
   // ---------- Reincarnation & summons ----------
   const MINION_COST = {
     itachiMind: 30,
@@ -9473,6 +9568,8 @@ function createTestSubject(label) {
     return null;
   }
 
+
+  // REVIEW: CORE 14 | Niko game-over presentation and the ending dispatcher.
   const NIKO_GAME_OVER_BGM_FILE_V57 = "[YTTD+-+OST]+40+-+Horror-ginen+[VGw3Lief5kU].webm";
   let _nikoGameOverRunningV57 = false;
   let _nikoGameOverAudioV57 = null;
@@ -9846,6 +9943,7 @@ function createTestSubject(label) {
   }
 
   function endGame(result) {
+    window.RpgSaves.finish(result);
     phase = "end";
     hideAllyHurtPortraitSafely();
     renderBars(); clearMenus();
@@ -9856,8 +9954,11 @@ function createTestSubject(label) {
     }
   }
 
+
+  // REVIEW: CORE 15 | Complete a player action, handle pending dialogue, then select the next turn.
   // ---------- Player action end / advance flow ----------
   function advanceAfterPlayerAction() {
+    window.RpgSaves.player(party[currentActorIdx]?.name, selectedAction || "forced-action", selectedItemKey || pendingSkill?.key || pendingSkill?.name);
     const actor = party[currentActorIdx];  // acting ally (just finished)
     const actorIdx = currentActorIdx;      // remember which slot acted
     if (actor && actor.name) setTurnBanner(actor.name, "ally");
@@ -9985,6 +10086,8 @@ function createTestSubject(label) {
     UI.actingHud.appendChild(badge);
   }
 
+
+  // REVIEW: CORE 16 | Enemy-phase gates, upkeep, action execution, and return to player control.
   async function enemyPhase() {
     const __prevEnemyLog = ENEMY_LOG;
     ENEMY_LOG = true;
@@ -10076,6 +10179,7 @@ function createTestSubject(label) {
         const actionsTotal = actionsForEnemy(foe);
         _currentEnemyAttacker = foe;
         for (let actionNum = 1; actionNum <= actionsTotal; actionNum++) {
+          window.RpgSaves.enemyIntent(null);
           try {
           const totalActs = actionsForEnemy(foe);
           const isLastAction = actionNum === totalActs;
@@ -10188,6 +10292,7 @@ function createTestSubject(label) {
             }
           }
 
+          window.RpgSaves.enemyIntent(choice);
           // EN costs
           const cost =
             choice === "trial1" ? BOSS_COST.trial1 :
@@ -10655,7 +10760,7 @@ function createTestSubject(label) {
         } catch (err) {
           console.error(err);
           log(`(engine) An error interrupted ${foe.name}'s action; skipping to the next action.`);
-        }
+        } finally { window.RpgSaves.enemy(foe); }
         }
 
         if (isSS(foe)) foe._focusReady = false;
@@ -10826,6 +10931,8 @@ function createTestSubject(label) {
     return { repeat, label };
   }
 
+
+  // REVIEW: CORE 17 | Battle guide/details and dialogue-history rendering.
   // ---------- Details ----------
   function renderDetails() {
     const wrap = document.createElement("div");
@@ -11330,6 +11437,8 @@ function createTestSubject(label) {
     }
   });
 
+
+  // REVIEW: CORE 18 | Pre-fight overlay and opening summon dialogue handlers.
   // ---------- Pre-fight Dialogue ----------
   const PREFIGHT_LINES = [
     { s:"Soulless Survivor In Miya's body",  t:'"Did you plan this betrayal Miya?"'},
@@ -11967,8 +12076,25 @@ function createTestSubject(label) {
 
 
 
+
+  // REVIEW: CORE 19 | Reset battle flags and connect Start Battle/reset controls to the opening sequence.
+  function resetBattleProgress() {
+    _inPlayerPhase = false; _actedThisPhase = []; nextPlayerPhaseStarter = null;
+    taunt = { turns: 0, targetName: null }; exclusiveThisPlayerPhase = { tauntUsed: false };
+    _skipFollowUpThisAction = false; _ssFirstHealDialogueQueued = false; _ssFirstHealDialogueShown = false;
+    _itachiDefeatShown = false; _yukiDefeatShown = false; _forcePlayerTurnAfterPostSummons = false;
+    _postSummonsDialogueDone = false; _ssRevivalDone = false; _ssSummonedTotal = 0;
+    _ssPhase2Triggered = false; SS_FOCUS_CHANCE_LAST_ACTION = 0.25; enemyPhaseCounter = 0; _ssFirstAttackEventDone = false;
+    _lastTargetedAllyName = null; towaNotebookArmed = false; towaNotebookEnemyActive = false;
+    towaNotebookDeaths.clear(); DIALOGUE_HISTORY = []; _overlayTranscriptLines = []; _overlayLastCaptured = "";
+    for (const key of Object.keys(_defeatDlgShown)) delete _defeatDlgShown[key];
+    window._ssPhase2Done = false; window._forcePlayerTurnAfterPostSummons = false;
+  }
+
   // ---------- Flow ----------
   UI.startBtn.addEventListener("click", () => {
+    if (!window.RpgSaves.begin()) return;
+    resetBattleProgress();
     hideShiftHint();
     riskItUsedThisBattle = false;
     const names = [LOCKED_LEADER, ...selectedNames];
@@ -12047,6 +12173,7 @@ function createTestSubject(label) {
       // Keep the requested battle OST active when battle control starts.
       try { swapBattleBgm("bgm", { ducked: false, ms: 250 }); } catch {}
 
+      _inPrefightFlow = false;
       // 3) Only start the player phase after that dialogue is closed/skipped
       _actionInFlight = false;
       phase = "player";
@@ -12060,13 +12187,15 @@ function createTestSubject(label) {
       autoSelfCureIfNeeded(party[currentActorIdx]);
       renderCommandMenu();
       showShiftHint();
+      window.RpgSaves.openingFinished();
       });
     });
   });
 
   // Reset: restore initial stats
   UI.resetBtn.addEventListener("click", () => {
-    if (!party.length) return;
+    if (!party.length || !window.RpgSaves.begin()) return;
+    resetBattleProgress();
 
     riskItUsedThisBattle = false;
     const names = party.map(p => p.name);
@@ -12078,6 +12207,7 @@ function createTestSubject(label) {
 
     bag = defaultBag();
     enemies = [ makeEnemy("Soulless Survivor", 40000, 445, 225, 10, 2100, "high") ];
+    const ss = enemies.find(isSS);
     // if (!ss._analytical) {
     ss._analytical = {
       active: false,         // flips true the first SS turn (i.e., when he stops being an observer)
@@ -12097,6 +12227,7 @@ function createTestSubject(label) {
     doReincarnation(enemies.find(isSS));
 
     runSummonDialogue(() => {
+      _inPrefightFlow = false;
       phase = "player";
       currentActorIdx = firstAlivePartyIndex();
       log({
@@ -12106,6 +12237,7 @@ function createTestSubject(label) {
       renderAll();
       autoSelfCureIfNeeded(party[currentActorIdx]);
       renderCommandMenu();
+      window.RpgSaves.openingFinished();
     });
   });
 
@@ -12122,6 +12254,7 @@ function createTestSubject(label) {
   }
 
   function resetToCharacterSelect() {
+    window.RpgSaves.leaveBattle();
     window.__nikoGameOverShiftDisabledV57 = false;
     
     hideShiftHint();
@@ -12154,6 +12287,8 @@ function createTestSubject(label) {
   const _origEnemyPhase = enemyPhase; // (no-op; left for clarity)
 
 
+
+  // REVIEW: CORE 20 | Error wrappers and the later in-scope behavior overrides.
 // === auto-inserted error wrappers (generated) ===
 const __wrapTry = (name, fn) => function(...args){
   try { return fn.apply(this, args); }
@@ -12364,6 +12499,8 @@ const __wrapTry = (name, fn) => function(...args){
 // === end auto-inserted error wrappers ===
 
 
+
+  // REVIEW: CORE OVERRIDES | Review these after the original implementations: later wrappers/replacements take effect here.
 // === final command button interaction and submenu placement fix ===
 (function installFinalCommandButtonFixInsideBattleScope(){
   try {
@@ -13019,7 +13156,7 @@ const __wrapTry = (name, fn) => function(...args){
     btn.onclick = function(event){
       event.preventDefault();
       event.stopPropagation();
-      if (btn.disabled) return;
+      if (btn.disabled || !btn.isConnected || _actionInFlight || isBattleDialogueActive()) return;
       releaseActionLockV28();
       onclick();
       setTimeout(releaseActionLockV28, 0);
@@ -13307,8 +13444,11 @@ const __wrapTry = (name, fn) => function(...args){
     selectedAction = 'guard';
     var actor = party[currentActorIdx];
 
+    var committed = false;
     var confirm = makeMenuButtonV28('<strong>Confirm Guard</strong>', function(){
-      var act = party[currentActorIdx];
+      if (committed || party[currentActorIdx] !== actor || phase !== 'player') return;
+      committed = true;
+      var act = actor;
       if (!act || !act.alive) { renderCommandMenu(); return; }
       act.guarding = true;
       log(act.name + ' braces to guard.');
@@ -13348,6 +13488,9 @@ const __wrapTry = (name, fn) => function(...args){
     var command = event.target && event.target.closest ? event.target.closest('#menu button') : null;
     if (!command || !UI || command.parentElement !== UI.menu) return;
 
+    if (command.disabled || phase !== 'player' || _actionInFlight || isBattleDialogueActive()) {
+      event.preventDefault(); event.stopImmediatePropagation(); return;
+    }
     var label = (command.textContent || '').trim().toLowerCase();
     releaseActionLockV28();
 
@@ -13746,6 +13889,8 @@ const __wrapTry = (name, fn) => function(...args){
   window.__selectHudResetFixV34InsideBattleScope = true;
 
   function forceSelectHudVisibleV34(){
+    // A delayed Shift-reset callback must not hide a subsequently started battle.
+    if (party.length || _inPrefightFlow) return;
     try {
       document.documentElement.classList.remove('battle-flow-active', 'prefight-dialogue-active', 'battle-ui-active');
       document.body.classList.remove('battle-flow-active', 'prefight-dialogue-active', 'battle-ui-active', 'prefight-dialogue-open', 'battle-guide-open');
@@ -13826,6 +13971,27 @@ const __wrapTry = (name, fn) => function(...args){
 
 
 
+// Debug modifiers share one exact baseline, so toggle order cannot erase stats.
+function debugAttackBonus(unit) {
+  return (unit._debugAtkBoostAppliedV44 ? 1e20 : 0) +
+    (unit._debugEighthAtkBoostAppliedV46 ? 3300 : 0);
+}
+function updateDebugAttack(unit) {
+  const active = unit._debugAtkBoostAppliedV44 || unit._debugEighthAtkBoostAppliedV46;
+  if (active && !unit._debugAttackOriginal) {
+    unit._debugAttackOriginal = {
+      baseAtk: Number.isFinite(unit.baseAtk) ? unit.baseAtk : (Number(unit.atk) || 0),
+      atk: Number(unit.atk) || 0, hasAtk: Object.hasOwn(unit, 'atk')
+    };
+  }
+  const original = unit._debugAttackOriginal;
+  if (!original) return;
+  unit.baseAtk = original.baseAtk + debugAttackBonus(unit);
+  if (active || original.hasAtk) unit.atk = original.atk + debugAttackBonus(unit);
+  else delete unit.atk;
+  if (!active) delete unit._debugAttackOriginal;
+}
+
 // === DEBUG V44: Alt + A + T real attack boost toggle ===
 (function installDebugAttackToggleV44InsideBattleScope(){
   'use strict';
@@ -13848,20 +14014,14 @@ const __wrapTry = (name, fn) => function(...args){
 
     unit._debugAtkBoostAppliedV44 = true;
 
-    // Damage uses atkOf(), and atkOf() reads baseAtk, not atk.
-    // So the debug boost must modify baseAtk to affect real damage.
-    unit.baseAtk = (Number(unit.baseAtk) || Number(unit.atk) || 0) + DEBUG_ATTACK_BONUS_V44;
-
-    // Also keep atk in sync in case any other code path reads it directly.
-    unit.atk = (Number(unit.atk) || 0) + DEBUG_ATTACK_BONUS_V44;
+    updateDebugAttack(unit);
   }
 
   function removeBoostV44(unit){
     if (!unit || !unit._debugAtkBoostAppliedV44) return;
 
     unit._debugAtkBoostAppliedV44 = false;
-    unit.baseAtk = Math.max(0, (Number(unit.baseAtk) || 0) - DEBUG_ATTACK_BONUS_V44);
-    unit.atk = Math.max(0, (Number(unit.atk) || 0) - DEBUG_ATTACK_BONUS_V44);
+    updateDebugAttack(unit);
   }
 
   function applyCurrentPartyV44(){
@@ -13965,15 +14125,13 @@ const __wrapTry = (name, fn) => function(...args){
   function addEighthBoostV46(unit){
     if (!unit || unit._debugEighthAtkBoostAppliedV46) return;
     unit._debugEighthAtkBoostAppliedV46 = true;
-    unit.baseAtk = (Number(unit.baseAtk) || Number(unit.atk) || 0) + DEBUG_EIGHTH_ATTACK_BONUS_V46;
-    unit.atk = (Number(unit.atk) || 0) + DEBUG_EIGHTH_ATTACK_BONUS_V46;
+    updateDebugAttack(unit);
   }
 
   function removeEighthBoostV46(unit){
     if (!unit || !unit._debugEighthAtkBoostAppliedV46) return;
     unit._debugEighthAtkBoostAppliedV46 = false;
-    unit.baseAtk = Math.max(0, (Number(unit.baseAtk) || 0) - DEBUG_EIGHTH_ATTACK_BONUS_V46);
-    unit.atk = Math.max(0, (Number(unit.atk) || 0) - DEBUG_EIGHTH_ATTACK_BONUS_V46);
+    updateDebugAttack(unit);
   }
 
   function applyCurrentPartyV46(){
@@ -14982,6 +15140,7 @@ const __wrapTry = (name, fn) => function(...args){
     } catch (_) {}
 
     function showSimulationEscapeEndingV89(){
+      window.RpgSaves.finish("escaped");
       try { phase = "ending"; } catch (_) {}
       try { _actionInFlight = false; } catch (_) {}
       try { ENEMY_LOG = false; } catch (_) {}
@@ -16431,6 +16590,136 @@ const __wrapTry = (name, fn) => function(...args){
   })();
   // === end USER REQUEST V97 ===
 
+  // Persistence adapter: serialize data only, at a fully prepared player turn.
+
+  // REVIEW: SAVE ADAPTER | Expose readiness, combat history, snapshots, and restoration to save-system.js.
+  window.RpgSaves.install({
+    hasBattle: () => party.length > 0 && UI.battleUI.style.display !== "none",
+    isReady: () => party.length > 0 && phase === "player" && _inPlayerPhase &&
+      !_actionInFlight && !inSpecialDialogue && !isBattleDialogueActive() &&
+      !_inPrefightFlow && !selectedAction && !pendingSkill && !followCtx &&
+      party[currentActorIdx]?.alive && party[currentActorIdx]?._turnStarted === true &&
+      !_actedThisPhase[currentActorIdx] && UI.battleUI.style.display !== "none" &&
+      [...UI.menu.querySelectorAll("button")].some(b => !b.disabled) && !UI.subMenu.textContent.trim(),
+    animationsDone: () => _hurtQueue,
+    currentEnemy: () => _currentEnemyAttacker?.name,
+    currentActor: () => party[currentActorIdx]?.name,
+    combat: () => ({ party, enemies, inventory: bag.map(i => ({ key: i.key, qty: i.qty })) }),
+    inventory: () => bag.map(item => ({ item_id: item.key, quantity: item.qty })),
+    snapshot: () => ({
+      party, enemies, flags: {phase, currentActorIdx, nextPlayerPhaseStarter, riskItUsedThisBattle, taunt, exclusiveThisPlayerPhase, _skipFollowUpThisAction, _inPlayerPhase, _actedThisPhase, towaNotebookArmed, towaNotebookEnemyActive, _ssFirstHealDialogueQueued, _ssFirstHealDialogueShown, _itachiDefeatShown, _yukiDefeatShown, _forcePlayerTurnAfterPostSummons, _postSummonsDialogueDone, _ssRevivalDone, _ssSummonedTotal, _ssPhase2Triggered, _tsSerial, DIALOGUE_HISTORY, enemyPhaseCounter, _ssFirstAttackEventDone, _lastTargetedAllyName, _overlaySeenOnce, _overlayTranscriptLines, _overlayLastCaptured},
+      selectedNames: [...selectedNames], notebookDeaths: [...towaNotebookDeaths],
+      focusChance: SS_FOCUS_CHANCE_LAST_ACTION,
+      story: { defeats: _defeatDlgShown, phase2Done: !!window._ssPhase2Done,
+        forcePlayerAfterSummons: !!window._forcePlayerTurnAfterPostSummons },
+      music: _activeBgmKey,
+      logEntries: [...UI.log.children].map(node => node.textContent)
+    }),
+    restore(saved) {
+      const data = saved.state, v = data?.flags;
+      if (data?.schemaVersion !== 2 || v?.phase !== "player" || !v._inPlayerPhase ||
+          !Array.isArray(data.party) || !Array.isArray(data.enemies) ||
+          !data.party.every(p => ROSTER[p.name]) || !data.party[v.currentActorIdx]?._turnStarted) {
+        throw new Error("This save is not a compatible player-turn checkpoint.");
+      }
+      const items = defaultBag();
+      if (!Array.isArray(saved.inventory) || items.some(i => !saved.inventory.some(x => x.item_id === i.key && Number.isSafeInteger(x.quantity) && x.quantity >= 0))) {
+        throw new Error("The saved inventory is incomplete.");
+      }
+      // Characters are plain data objects; rebuilding them would reapply passives/debug modifiers.
+      party = data.party; enemies = data.enemies;
+      bag = items.map(item => ({ ...item, qty: saved.inventory.find(x => x.item_id === item.key).quantity }));
+      phase = v.phase;
+      currentActorIdx = v.currentActorIdx;
+      nextPlayerPhaseStarter = v.nextPlayerPhaseStarter;
+      riskItUsedThisBattle = v.riskItUsedThisBattle;
+      taunt = v.taunt;
+      exclusiveThisPlayerPhase = v.exclusiveThisPlayerPhase;
+      _skipFollowUpThisAction = v._skipFollowUpThisAction;
+      _inPlayerPhase = v._inPlayerPhase;
+      _actedThisPhase = v._actedThisPhase;
+      towaNotebookArmed = v.towaNotebookArmed;
+      towaNotebookEnemyActive = v.towaNotebookEnemyActive;
+      _ssFirstHealDialogueQueued = v._ssFirstHealDialogueQueued;
+      _ssFirstHealDialogueShown = v._ssFirstHealDialogueShown;
+      _itachiDefeatShown = v._itachiDefeatShown;
+      _yukiDefeatShown = v._yukiDefeatShown;
+      _forcePlayerTurnAfterPostSummons = v._forcePlayerTurnAfterPostSummons;
+      _postSummonsDialogueDone = v._postSummonsDialogueDone;
+      _ssRevivalDone = v._ssRevivalDone;
+      _ssSummonedTotal = v._ssSummonedTotal;
+      _ssPhase2Triggered = v._ssPhase2Triggered;
+      SS_FOCUS_CHANCE_LAST_ACTION = Number.isFinite(data.focusChance) ? data.focusChance : (enemies.some(e => isSS(e) && e._phase2) ? 0.55 : 0.25);
+      _tsSerial = v._tsSerial;
+      DIALOGUE_HISTORY = v.DIALOGUE_HISTORY;
+      enemyPhaseCounter = v.enemyPhaseCounter;
+      _ssFirstAttackEventDone = v._ssFirstAttackEventDone;
+      _lastTargetedAllyName = v._lastTargetedAllyName;
+      _overlaySeenOnce = v._overlaySeenOnce;
+      _overlayTranscriptLines = v._overlayTranscriptLines;
+      _overlayLastCaptured = v._overlayLastCaptured;
+      selectedNames = new Set(data.selectedNames);
+      renderCandidates();
+      towaNotebookDeaths = new Set(data.notebookDeaths);
+      for (const key of Object.keys(_defeatDlgShown)) delete _defeatDlgShown[key];
+      Object.assign(_defeatDlgShown, data.story.defeats);
+      window._ssPhase2Done = data.story.phase2Done;
+      window._forcePlayerTurnAfterPostSummons = data.story.forcePlayerAfterSummons;
+      window.__battleDialogueHardLockV72 = false;
+      _actionInFlight = false; _currentEnemyAttacker = null;
+      selectedAction = null; selectedItemKey = null; pendingSkill = null; followCtx = null; _pickCtx = null;
+      _inPrefightFlow = false; ENEMY_LOG = false; inSpecialDialogue = false;
+      _battleDialogueLockDepth = 0; _dialogueResetStarterIdxV72 = null;
+      UI.selectPanel.style.display = "none"; UI.battleUI.style.display = "";
+      UI.overlay.style.display = "none";
+      UI.log.replaceChildren();
+      for (const line of data.logEntries || []) {
+        const entry = document.createElement("p"); entry.textContent = line; UI.log.append(entry);
+      }
+      // The command renderer sees _turnStarted=true, so it does not tick saved effects again.
+      renderAll(); renderCommandMenu(); showShiftHint();
+      swapBattleBgm(["bgm","phase2","phase3"].includes(data.music) ? data.music : "bgm", { ducked: false, ms: 250 });
+      if (enemies.find(isSS)?._analytical?.active) {
+        let box = document.getElementById("ss-analytical-box");
+        if (!box) {
+          box = document.createElement("div"); box.id = "ss-analytical-box";
+          box.style.cssText = "position:fixed;left:10px;top:10px;z-index:99999;padding:10px;background:#101436;color:#e7e9f7;border-radius:10px";
+          document.body.appendChild(box);
+        }
+        window._ssAnalyticalBox = box;
+        box.textContent = "Analytical Thinking: " + (enemies.find(isSS)._analytical.current || "");
+      }
+    }
+  });
+  // Follow-up choices can finish via advanceTurn without advanceAfterPlayerAction.
+  const followAttackForPersistence = performFollowAttack;
+  performFollowAttack = function(enemyIdx) {
+    const initiator = party[followCtx?.initiatorIdx]?.name;
+    const partner = party[followCtx?.partnerIdx]?.name;
+    const target = enemies[enemyIdx]?.name;
+    window.RpgSaves.invalidate();
+    try { return followAttackForPersistence.apply(this, arguments); }
+    finally { window.RpgSaves.followup(initiator, partner, "attack", target); }
+  };
+  const followDefenceForPersistence = applyFollowDefBoost;
+  applyFollowDefBoost = function() {
+    const initiator = party[followCtx?.initiatorIdx]?.name;
+    const partner = party[followCtx?.partnerIdx]?.name;
+    window.RpgSaves.invalidate();
+    try { return followDefenceForPersistence.apply(this, arguments); }
+    finally { window.RpgSaves.followup(initiator, partner, "defence"); }
+  };
+  const enemyPhaseForPersistence = enemyPhase;
+  enemyPhase = async function(...args) {
+    window.RpgSaves.enemyPhaseStart();
+    try { return await enemyPhaseForPersistence.apply(this, args); }
+    finally { window.RpgSaves.enemyPhaseEnd(); }
+  };
+  // Block manual saving as soon as a command or submenu is entered.
+  document.addEventListener("click", event => {
+    if (event.target.closest?.("#menu button, #subMenu button")) window.RpgSaves.invalidate();
+  }, true);
+
 
 })();
 
@@ -16448,111 +16737,15 @@ try {
 <div id="enemyHurtOverlay" class="hurt-portrait" style="display:none">
   <img id="enemyHurtImg" alt="">
 </div>
-<!-- Hidden YouTube players -->
-<div id="selectBgm"></div>
-<div id="prefightBgm"></div>
-<div id="bgm"></div>
-<div id="dialoguebgm1"></div>
-<div id="dialoguebgm2"></div>
-<div id="phase2bgm"></div>
-<div id="phase3bgm"></div>
-<div id="fightoverishbgm"></div>
+<!-- Additional music mounts -->
 <div id="phase4bgm"></div>
 
 <!-- duplicate YouTube iframe API script removed -->
-<script data-inlined-from="js/02-script-02.js">
-// ================== CONFIG (you can change these) ==================
-window.SKILL_OVERLAY_IMG = window.SKILL_OVERLAY_IMG || "assets/skill_overlay.png"; // shown over the enemy row
-window.SKILL_SFX_URL    = window.SKILL_SFX_URL    || "assets/sfx/skill_use.wav";   // unique SFX for skill use
-// ==================================================================
 
-// Inject minimal CSS for the overlay
-(function injectSkillOverlayCSS(){
-  if (document.getElementById("skill-overlay-css")) return;
-  const css = `
-    .enemy-row { position: relative; } /* ensure absolute children anchor correctly */
-    .skill-hit-overlay {
-      position:absolute; inset:0; pointer-events:none; z-index:4;
-      background-position:center; background-repeat:no-repeat; background-size:contain;
-      animation: skillOverlayPop .2s ease-out;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,.35));
-    }
-    @keyframes skillOverlayPop { from { transform: scale(.9); opacity:.0 } to { transform: scale(1); opacity:1 } }
-  `;
-  const style = document.createElement("style");
-  style.id = "skill-overlay-css";
-  style.textContent = css;
-  document.head.appendChild(style);
-})();
+<!-- REVIEW: PAGE OVERRIDES | Layout, portraits, menus, opening cover, and ending refinements; keep this sequence intact. -->
 
-// Small helper: safest CSS escape for attribute selector
-function cssEscapeSimple(s){
-  return String(s).replace(/["\\]/g, "\\$&");
-}
-
-// Cache a single Audio element for skill SFX
-let _skillSfx;
-function playSkillSfx(){
-  try {
-    if (!_skillSfx) {
-      _skillSfx = new Audio(window.SKILL_SFX_URL);
-      _skillSfx.preload = "auto";
-      _skillSfx.volume = 1.0; // tweak if you like
-    }
-    _skillSfx.currentTime = 0;
-    _skillSfx.play().catch(()=>{}); // ignore autoplay errors
-  } catch(e){}
-}
-
-/**
- * Shows the overlay image over the FULL enemy row (name + bars + portrait) for ~2s.
- * @param {string} enemyName - must match the data-name on the .enemy-row
- * @param {number} ms - how long to display (default 2000)
- */
-function showSkillOverlayOnEnemy(enemyName, ms=2000){
-  try{
-    const list = UI?.enemyList;
-    if (!list) return;
-    const row = list.querySelector(`.enemy-row[data-name="${cssEscapeSimple(enemyName)}"]`);
-    if (!row) return;
-
-    // Ensure the row can anchor absolute children
-    if (getComputedStyle(row).position === "static") row.style.position = "relative";
-
-    // Reuse if one already exists (avoid stacking)
-    let ov = row.querySelector(".skill-hit-overlay");
-    if (!ov) {
-      ov = document.createElement("div");
-      ov.className = "skill-hit-overlay";
-      row.appendChild(ov);
-    }
-    ov.style.backgroundImage = `url("${window.SKILL_OVERLAY_IMG}")`;
-    ov.style.opacity = "1";
-
-    // Clear after ms
-    const tag = Symbol("skillOverlay");
-    ov._tag = tag;
-    setTimeout(() => {
-      // only clear if we're still the latest
-      if (ov && ov._tag === tag) { ov.style.opacity = "0"; row.removeChild(ov); }
-    }, Math.max(500, ms|0));
-  }catch(e){}
-}
-
- /**
- * Convenience: for AOE skills, show overlay on all currently living enemies.
- */
-function showOverlayOnAllLivingEnemies(ms=2000){
-  try {
-    for (const foe of (enemies||[])) {
-      if (!foe?.alive) continue;
-      showSkillOverlayOnEnemy(foe.name, ms);
-    }
-  } catch(e){}
-}
-
-</script>
 <script data-inlined-from="js/03-layout-lock-script.js">
+// REVIEW SCRIPT 04 | js/03-layout-lock-script.js
 (function () {
   function getBaseline() {
     var tag = document.querySelector('meta[name="layout-baseline"]');
@@ -16620,19 +16813,20 @@ function showOverlayOnAllLivingEnemies(ms=2000){
 
 </script>
 <script data-inlined-from="js/04-turn-banner-script.js">
+// REVIEW SCRIPT 05 | js/04-turn-banner-script.js
 (function(){
   if (window.__turnBannerInstalled) return;
   window.__turnBannerInstalled = true;
 
   // Create the top-center banner (fixed so it never overlaps row status texts)
-  const banner = document.createElement('div');
+  const banner = document.getElementById('turnHud') || document.createElement('div');
   banner.className = 'turn-hud';
   banner.id = 'turnHud';
   banner.setAttribute('aria-live', 'polite');
   banner.style.whiteSpace = 'nowrap';
   banner.textContent = 'YOUR TURN!';
   (document.body ? Promise.resolve() : new Promise(r => document.addEventListener('DOMContentLoaded', r)))
-    .then(() => document.body.appendChild(banner));
+    .then(() => { if (!banner.isConnected) document.body.appendChild(banner); });
 
   let lastHighlightEl = null;
 
@@ -16730,6 +16924,7 @@ window.setTurnBanner = function(name, side){
 
 </script>
 <script data-inlined-from="layout-lock.js">
+// REVIEW SCRIPT 06 | layout-lock.js
 // Present because the original file referenced layout-lock.js. The inline layout-lock script has been externalized separately.
 
 </script>
@@ -16737,11 +16932,13 @@ window.setTurnBanner = function(name, side){
   Press "Left Shift" to return to the character select menu.
 </div>
 <script data-inlined-from="js/05-script-05.js">
+// REVIEW SCRIPT 07 | js/05-script-05.js
 /* Battle Guide panels are rendered through guideHTML() and opened by the Battle Guide buttons above. */
 
 </script>
 
 <script data-inlined-from="js/06-square-character-portraits-script.js">
+// REVIEW SCRIPT 08 | js/06-square-character-portraits-script.js
 (() => {
   let running = false;
 
@@ -16808,6 +17005,7 @@ window.setTurnBanner = function(name, side){
 
 
 <script data-inlined-from="js/07-align-battle-guide-to-niko-card-final-fix.js">
+// REVIEW SCRIPT 09 | js/07-align-battle-guide-to-niko-card-final-fix.js
 (function () {
     function alignBattleGuideToNikoCard() {
       const guideButton = document.getElementById("battleGuideBtn");
@@ -16840,6 +17038,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/12-final-portrait-left-shift-and-guide-alignment.css">
+/* REVIEW STYLE 17 | css/12-final-portrait-left-shift-and-guide-alignment.css */
 /* Shift the portrait squares left without moving any card text. */
   #selectPanel .card.has-character-portrait:not(.locked) {
     --select-portrait-left: 6px !important;
@@ -16899,6 +17098,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/08-final-force-portrait-left-and-align-guide.js">
+// REVIEW SCRIPT 10 | js/08-final-force-portrait-left-and-align-guide.js
 (function () {
   function px(value) { return value + 'px'; }
 
@@ -17003,6 +17203,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/13-battle-guide-centered-modal-final-fix.css">
+/* REVIEW STYLE 18 | css/13-battle-guide-centered-modal-final-fix.css */
 /* Center the Battle Guide modal over the game screen and keep it above all UI below it. */
   body.battle-guide-open #stage::before {
     content: "";
@@ -17054,6 +17255,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/14-final-selection-guide-polish-fixes.css">
+/* REVIEW STYLE 19 | css/14-final-selection-guide-polish-fixes.css */
 /* Keep the selected count and Start Battle on opposite sides. */
   #selectPanel > .hud {
     display: flex !important;
@@ -17147,6 +17349,7 @@ window.setTurnBanner = function(name, side){
 
 
 <script data-inlined-from="js/09-final-selection-dom-polish-script.js">
+// REVIEW SCRIPT 11 | js/09-final-selection-dom-polish-script.js
 (function () {
   var roles = {
     "Niko Himura": "Protagonist",
@@ -17198,6 +17401,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/15-final-user-selection-hud-overlay-role-fix.css">
+/* REVIEW STYLE 20 | css/15-final-user-selection-hud-overlay-role-fix.css */
 /* Make the selector controls sit on opposite ends of the selection panel. */
   #selectPanel > .hud {
     display: grid !important;
@@ -17264,6 +17468,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/10-final-user-selection-role-position-script.js">
+// REVIEW SCRIPT 12 | js/10-final-user-selection-role-position-script.js
 (function () {
   function fixCandidateRoleLabels() {
     return;
@@ -17348,6 +17553,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/16-final-request-title-overlay-guide-button-fix.css">
+/* REVIEW STYLE 21 | css/16-final-request-title-overlay-guide-button-fix.css */
 /* Move non-Niko role titles slightly lower without changing their x-position. */
   #selectPanel .select-grid .card.has-character-portrait .character-role-under-portrait {
     top: 200px !important;
@@ -17404,6 +17610,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/11-final-request-title-overlay-guide-button-script.js">
+// REVIEW SCRIPT 13 | js/11-final-request-title-overlay-guide-button-script.js
 (function () {
   var nativeAppend = Element.prototype.appendChild;
 
@@ -17517,6 +17724,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/17-user-final-party-select-position-fix.css">
+/* REVIEW STYLE 22 | css/17-user-final-party-select-position-fix.css */
 /* Final override: the Battle Guide dimmer covers the whole viewport. Only the guide modal sits above it. */
   #battleGuideTrueViewportOverlay {
     position: fixed !important;
@@ -17571,6 +17779,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/12-user-final-party-select-position-fix-script.js">
+// REVIEW SCRIPT 14 | js/12-user-final-party-select-position-fix-script.js
 (function () {
   var append = Element.prototype.appendChild;
   var rafPending = false;
@@ -17709,6 +17918,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/18-final-skill-modal-role-and-guide-button-fix.css">
+/* REVIEW STYLE 23 | css/18-final-skill-modal-role-and-guide-button-fix.css */
 /* Final candidate role-title fix: move non-Niko role titles visibly lower under the portrait. */
   #selectPanel .select-grid .card.has-character-portrait:not(.locked) {
     min-height: 252px !important;
@@ -17850,6 +18060,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/13-final-skill-modal-role-and-guide-button-script.js">
+// REVIEW SCRIPT 15 | js/13-final-skill-modal-role-and-guide-button-script.js
 (function () {
   var append = Element.prototype.appendChild;
   var rafPending = false;
@@ -18077,6 +18288,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/19-user-request-role-16px-guide-overlay-fix.css">
+/* REVIEW STYLE 24 | css/19-user-request-role-16px-guide-overlay-fix.css */
 /* User request: move candidate role labels down by exactly 16px from the previous final placement. */
   #selectPanel .select-grid .card.has-character-portrait:not(.locked) {
     min-height: 252px !important;
@@ -18112,6 +18324,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/14-user-request-role-16px-guide-overlay-script.js">
+// REVIEW SCRIPT 16 | js/14-user-request-role-16px-guide-overlay-script.js
 (function () {
   var append = Element.prototype.appendChild;
   var queued = false;
@@ -18219,6 +18432,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/20-user-request-2026-06-25-party-select-final-fix.css">
+/* REVIEW STYLE 25 | css/20-user-request-2026-06-25-party-select-final-fix.css */
 /* Final user request overrides: keep Party Select controls visible, show only 3 skills first, and enlarge name/select controls. */
   html.select-hud-floating-active #selectFloatingHud,
   #selectFloatingHud.select-floating-hud {
@@ -18331,6 +18545,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/15-user-request-2026-06-25-party-select-final-script.js">
+// REVIEW SCRIPT 17 | js/15-user-request-2026-06-25-party-select-final-script.js
 (function () {
   var append = Element.prototype.appendChild;
   var queued = false;
@@ -18441,6 +18656,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/21-user-request-2026-06-25-show-less-and-scroll-stability.css">
+/* REVIEW STYLE 26 | css/21-user-request-2026-06-25-show-less-and-scroll-stability.css */
 /* Latest request: white selected count, collapsible extra skills, and stable bottom scrolling. */
   html,
   body,
@@ -18489,6 +18705,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/16-user-request-2026-06-25-show-less-and-scroll-stability-script.js">
+// REVIEW SCRIPT 18 | js/16-user-request-2026-06-25-show-less-and-scroll-stability-script.js
 (function () {
   function ensureShowLessButtons() {
     document.querySelectorAll('#selectPanel .skills-line').forEach(function (line) {
@@ -18541,6 +18758,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/22-user-request-2026-06-25-lock-icon-and-smaller-select-bar.css">
+/* REVIEW STYLE 27 | css/22-user-request-2026-06-25-lock-icon-and-smaller-select-bar.css */
 /* Replace Niko's old pink locked notice with a compact lock image in the top-right corner. */
   #selectPanel .card.locked.has-character-portrait {
     padding-right: 62px !important;
@@ -18603,6 +18821,7 @@ window.setTurnBanner = function(name, side){
 </style>
 
 <script data-inlined-from="js/17-user-request-2026-06-25-lock-icon-script.js">
+// REVIEW SCRIPT 19 | js/17-user-request-2026-06-25-lock-icon-script.js
 (function () {
   var queued = false;
   var lockSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">' +
@@ -18661,6 +18880,7 @@ window.setTurnBanner = function(name, side){
 
 
 <style data-inlined-from="css/23-final-user-request-2026-06-26-guide-detail-and-lag-fix.css">
+/* REVIEW STYLE 28 | css/23-final-user-request-2026-06-26-guide-detail-and-lag-fix.css */
 /* Final battle-flow controls: the guide/detail buttons live inside the command panel, not fixed to the viewport. */
 #battleGuideBtn.battle-guide-btn {
   display: none !important;
@@ -18865,6 +19085,7 @@ body.battle-ui-active .enemy-row.crit-hit {
 }
 </style>
 <script data-inlined-from="js/23-final-user-request-2026-06-26-guide-detail-and-lag-fix.js">
+// REVIEW SCRIPT 20 | js/23-final-user-request-2026-06-26-guide-detail-and-lag-fix.js
 (function () {
   if (window.__finalGuideDetailLagPatchInstalled) return;
   window.__finalGuideDetailLagPatchInstalled = true;
@@ -19082,6 +19303,7 @@ body.battle-ui-active .enemy-row.crit-hit {
 
 
 <style data-inlined-from="css/24-battle-sequence-turn-label-overlay-items-fix.css">
+/* REVIEW STYLE 29 | css/24-battle-sequence-turn-label-overlay-items-fix.css */
 /* Static battle sequence panel above the party/enemy cards. */
 #battleSequencePanel.battle-sequence-panel {
   display: block !important;
@@ -19300,6 +19522,7 @@ body.prefight-dialogue-active #battleActionPanel > #skillViewToggleBtn {
 
 
 <style data-inlined-from="css/25-turn-label-guide-role-stability-final.css">
+/* REVIEW STYLE 30 | css/25-turn-label-guide-role-stability-final.css */
 /* Final stabilization: Battle Guide and Detailed View stay as a vertical pair inside the battle action panel only. */
 #battleActionPanel {
   position: relative !important;
@@ -19408,6 +19631,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 
 
 <style data-inlined-from="css/26-enemy-gap-and-battle-start-fix.css">
+/* REVIEW STYLE 31 | css/26-enemy-gap-and-battle-start-fix.css */
 /* Enemy cards: reduce the left-side gap so the HP/EN bars sit close to the border,
    but still keep a little breathing room. When status pills exist, reserve space so
    the status text never clips into the bars or values. */
@@ -19464,6 +19688,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 </style>
 
 <script data-inlined-from="js/26-enemy-gap-and-battle-start-fix.js">
+// REVIEW SCRIPT 21 | js/26-enemy-gap-and-battle-start-fix.js
 (function () {
   if (window.__enemyGapAndBattleStartFixInstalled) return;
   window.__enemyGapAndBattleStartFixInstalled = true;
@@ -19490,6 +19715,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 </script>
 
 <style data-inlined-from="css/27-fit-one-page-compact-battle.css">
+/* REVIEW STYLE 32 | css/27-fit-one-page-compact-battle.css */
 /* Compact the entire battle screen so it fits within a single page view. */
 #battleUI {
   font-size: 0.92em !important;
@@ -19668,6 +19894,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 </style>
 
 <script data-inlined-from="js/27-fit-one-page-compact-battle.js">
+// REVIEW SCRIPT 22 | js/27-fit-one-page-compact-battle.js
 (function () {
   if (window.__fitOnePageCompactBattleInstalled) return;
   window.__fitOnePageCompactBattleInstalled = true;
@@ -19728,6 +19955,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 
 
 <style data-inlined-from="css/31-static-log-and-command-stack-final-fix.css">
+/* REVIEW STYLE 33 | css/31-static-log-and-command-stack-final-fix.css */
 /* Static final battle layout: top image stays unchanged; Party aligns left, Enemies aligns right, commands stay between them. */
 #battleUI {
   width: 100% !important;
@@ -20117,6 +20345,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 }
 </style>
 <script data-inlined-from="js/31-static-log-and-command-stack-final-fix.js">
+// REVIEW SCRIPT 23 | js/31-static-log-and-command-stack-final-fix.js
 (function () {
   if (window.__staticLogCommandStackFinalFixInstalled) return;
   window.__staticLogCommandStackFinalFixInstalled = true;
@@ -20293,9 +20522,15 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
     });
     var alreadyOrdered = buttons.length === sorted.length && buttons.every(function (btn, idx) { return btn === sorted[idx]; });
     if (alreadyOrdered) return;
-    var frag = document.createDocumentFragment();
-    sorted.forEach(function (btn) { frag.appendChild(btn); });
-    menu.appendChild(frag);
+    // Moving every button through a fragment blurs whichever control has focus.
+    // Move only out-of-order buttons and preserve focus if that button must move.
+    var focused = menu.contains(document.activeElement) ? document.activeElement : null;
+    sorted.forEach(function (btn, idx) {
+      if (menu.children[idx] !== btn) menu.insertBefore(btn, menu.children[idx] || null);
+    });
+    if (focused && focused.isConnected && document.activeElement !== focused) {
+      focused.focus({ preventScroll: true });
+    }
   }
 
   function replaceObserverText() {
@@ -20465,6 +20700,7 @@ body:not(.battle-flow-active):not(.battle-ui-active):not(.prefight-dialogue-acti
 
 
 <style data-inlined-from="css/32-command-click-and-submenu-final-fix.css">
+/* REVIEW STYLE 34 | css/32-command-click-and-submenu-final-fix.css */
 /* Final command interaction layer: command buttons receive clicks and all opened menus stay in the highlighted middle column. */
 body.battle-ui-active:not(.prefight-dialogue-active):not(.battle-guide-open) #battleMainRow.final-battle-main-row,
 body.battle-ui-active:not(.prefight-dialogue-active):not(.battle-guide-open) #battleActionPanel {
@@ -20520,6 +20756,7 @@ body.battle-ui-active:not(.prefight-dialogue-active):not(.battle-guide-open) #ba
 
 
 <style data-inlined-from="css/33-user-request-command-near-party-submenu-gap-overlay-fix.css">
+/* REVIEW STYLE 35 | css/33-user-request-command-near-party-submenu-gap-overlay-fix.css */
 /* User-requested final battle row: buttons stay beside Party; opened Attack/Skills/Items UI uses the gap before Enemies. */
 #battleMainRow.final-battle-main-row {
   grid-template-columns: 500px 218px minmax(0, 320px) 500px !important;
@@ -20694,6 +20931,7 @@ body.battle-ui-active:not(.prefight-dialogue-active):not(.battle-guide-open) #ba
 
 
 <style data-final-fix="enemy-names-and-action-gap">
+/* REVIEW STYLE 36 | enemy-names-and-action-gap */
 #battleSubmenuPanel { align-self: start !important; min-height: 0 !important; overflow: visible !important; }
 #battleSubmenuPanel #subMenu { display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }
 #battleSubmenuPanel #subMenu:not(:empty) {
@@ -20747,6 +20985,7 @@ body.battle-ui-active:not(.prefight-dialogue-active):not(.battle-guide-open) #ba
 </style>
 
 <style data-final-fix="command-ui-clicks-and-enemy-labels-v2">
+/* REVIEW STYLE 37 | command-ui-clicks-and-enemy-labels-v2 */
 #battleSubmenuPanel {
   display: block !important;
   align-self: start !important;
@@ -20856,6 +21095,7 @@ body.battle-ui-active:not(.prefight-dialogue-active):not(.battle-guide-open) #ba
 
 
 <style data-final-fix="stable-detail-pages-and-back-v3">
+/* REVIEW STYLE 38 | stable-detail-pages-and-back-v3 */
 /* Keep descriptions off by default in Simple View. Detailed View restores them. */
 html:not(.skill-detail-view) #battleSubmenuPanel #subMenu .items > button br,
 body:not(.skill-detail-view) #battleSubmenuPanel #subMenu .items > button br {
@@ -20914,6 +21154,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu .items > button br {
 </style>
 
 <script data-final-fix="stable-detail-pages-and-back-v3">
+// REVIEW SCRIPT 24 | stable-detail-pages-and-back-v3
 (function () {
   'use strict';
   var busy = false;
@@ -21182,6 +21423,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu .items > button br {
 
 
 <style data-final-fix="turn-marker-status-arrows-clicks-v26">
+/* REVIEW STYLE 39 | turn-marker-status-arrows-clicks-v26 */
 /* Enemy TURN marker: keep it beside the portrait and under the EN line instead of over bars/stats. */
 #enemyList .row.enemy-row.has-portrait.is-active::before {
   top: 74px !important;
@@ -21281,6 +21523,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu button {
 </style>
 
 <script data-final-fix="turn-marker-status-arrows-clicks-v26">
+// REVIEW SCRIPT 25 | turn-marker-status-arrows-clicks-v26
 (function () {
   'use strict';
   if (window.__turnMarkerStatusClickFixV26) return;
@@ -21482,6 +21725,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu button {
 
 
 <style data-v29-status-layout-fix>
+/* REVIEW STYLE 40 | data-v29-status-layout-fix */
 /* Party status effects: always on their own line under the bars so they never clip text. */
 #partyList .row.ally-row .bars-with-status.ally {
   display: grid !important;
@@ -21562,6 +21806,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu button {
 }
 </style>
 <script data-v29-status-layout-fix>
+// REVIEW SCRIPT 26 | data-v29-status-layout-fix
 (function(){
   'use strict';
   if (window.__statusLayoutFixV29) return;
@@ -21612,6 +21857,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu button {
 
 
 <style data-v30-turn-position-fix>
+/* REVIEW STYLE 41 | data-v30-turn-position-fix */
 /* Move TURN label to the upper-left area of the active character card, above the stats. */
 #partyList .row.ally-row.is-active::before {
   top: 12px !important;
@@ -21643,6 +21889,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu button {
 
 
 <style data-v32-turn-position-fix>
+/* REVIEW STYLE 42 | data-v32-turn-position-fix */
 /* Move TURN to the upper-right area above the stats. */
 #partyList .row.ally-row.is-active::before {
   top: 12px !important;
@@ -21674,6 +21921,7 @@ body.skill-detail-view #battleSubmenuPanel #subMenu button {
 
 
 <style data-v34-select-hud-shift-reset-fix>
+/* REVIEW STYLE 43 | data-v34-select-hud-shift-reset-fix */
 /* When Left Shift returns to Party Select, the selected count / Start Battle bar must be visible again. */
 html.select-hud-floating-active:not(.battle-flow-active):not(.prefight-dialogue-active):not(.battle-ui-active) #selectFloatingHud,
 body.select-hud-floating-active:not(.battle-flow-active):not(.prefight-dialogue-active):not(.battle-ui-active) #selectFloatingHud,
@@ -21701,6 +21949,7 @@ html.select-hud-floating-active:not(.battle-flow-active):not(.prefight-dialogue-
 
 
 <style data-v36-select-hud-battle-hide-fix>
+/* REVIEW STYLE 44 | data-v36-select-hud-battle-hide-fix */
 /* Hide the Party Select bottom bar again after starting battle, including after Shift reset. */
 html.battle-flow-active #selectFloatingHud,
 body.battle-flow-active #selectFloatingHud,
@@ -21728,6 +21977,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 </style>
 
 <script data-v36-select-hud-battle-hide-fix>
+// REVIEW SCRIPT 27 | data-v36-select-hud-battle-hide-fix
 (function(){
   'use strict';
   if (window.__selectHudBattleHideFixV36) return;
@@ -21791,6 +22041,8 @@ body.battle-flow-active #selectFloatingHud #startBtn,
   document.addEventListener('keydown', function(event){
     if (event.code === 'ShiftLeft') {
       setTimeout(function(){
+        const panel = document.getElementById('selectPanel');
+        if (!panel || getComputedStyle(panel).display === 'none') return;
         document.documentElement.classList.remove('battle-flow-active', 'prefight-dialogue-active', 'battle-ui-active');
         document.body.classList.remove('battle-flow-active', 'prefight-dialogue-active', 'battle-ui-active');
         allowSelectHudOnCharacterSelectV36();
@@ -21820,6 +22072,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <style data-v47-shift-hint-hover-only>
+/* REVIEW STYLE 45 | data-v47-shift-hint-hover-only */
 /* Shift hint is normally invisible but remains hoverable in the bottom-right corner. */
 #shiftHint.shift-hint {
   display: block !important;
@@ -21846,6 +22099,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
   </div>
 </div>
 <script data-v56-intro-cover>
+// REVIEW SCRIPT 28 | data-v56-intro-cover
 (function installIntroCoverV56() {
   'use strict';
   if (window.__introCoverInstalledV56) return;
@@ -21927,17 +22181,20 @@ body.battle-flow-active #selectFloatingHud #startBtn,
       // Then let the black overlay slowly fade into the character select screen.
       document.documentElement.classList.remove('intro-cover-v56-active');
       if (document.body) document.body.classList.remove('intro-cover-v56-active');
-      setHudHiddenV56(false);
       cover.classList.add('cover-revealing');
       cover.style.setProperty('opacity', '0', 'important');
       cover.style.setProperty('pointer-events', 'none', 'important');
     }, 850);
 
-    setTimeout(function() {
+    setTimeout(async function() {
       window.__introCoverActiveV56 = false;
       window.__battleIntroCoverActive = false;
       try { cover.remove(); } catch (_) {}
-      try { window.__playSelectBgmAfterIntroCover && window.__playSelectBgmAfterIntroCover(); } catch (_) {}
+      const choice = await window.RpgSaves.openPicker();
+      if (choice === 'new') {
+        setHudHiddenV56(false);
+        try { window.__playSelectBgmAfterIntroCover && window.__playSelectBgmAfterIntroCover(); } catch (_) {}
+      }
     }, 2450);
 
     return false;
@@ -21967,6 +22224,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <script data-final-fix="dialogue-utility-back-unlock-v73">
+// REVIEW SCRIPT 29 | dialogue-utility-back-unlock-v73
 (function () {
   'use strict';
   if (window.__dialogueUtilityBackUnlockV73) return;
@@ -22000,6 +22258,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <script data-final-fix="force-select-bgm-on-shift-v78">
+// REVIEW SCRIPT 30 | force-select-bgm-on-shift-v78
 (function () {
   'use strict';
   if (window.__forceSelectBgmOnShiftV78) return;
@@ -22019,6 +22278,9 @@ body.battle-flow-active #selectFloatingHud #startBtn,
   }
 
   function forceSelectBgmV78() {
+    // Ignore old reset timers once the player has started another battle.
+    const panel = document.getElementById('selectPanel');
+    if (!panel || getComputedStyle(panel).display === 'none') return;
     try {
       hideSSPassiveMenuV78();
 
@@ -22088,6 +22350,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <style id="followup-menu-v88-remove-title-and-nav-fix">
+/* REVIEW STYLE 46 | followup-menu-v88-remove-title-and-nav-fix */
   #battleSubmenuPanel #subMenu .followup-v87-title,
   #battleSubmenuPanel #subMenu .followup-v88-title,
   #battleSubmenuPanel #subMenu .followup-v87-info,
@@ -22100,6 +22363,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
   }
 </style>
 <script id="followup-menu-v88-remove-title-and-nav-fix-script">
+// REVIEW SCRIPT 31 | followup-menu-v88-remove-title-and-nav-fix-script
 (function(){
   'use strict';
   if (window.__followupMenuV88RemoveTitleAndNavFix) return;
@@ -22199,6 +22463,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <style id="simulation-ending-v94-fullscreen-and-credits">
+/* REVIEW STYLE 47 | simulation-ending-v94-fullscreen-and-credits */
   html.simulation-ending-v94-active,
   html.simulation-ending-v94-active body,
   body.simulation-ending-v94-active {
@@ -22335,6 +22600,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
   }
 </style>
 <script id="simulation-ending-v94-fullscreen-and-credits-script">
+// REVIEW SCRIPT 32 | simulation-ending-v94-fullscreen-and-credits-script
 (function(){
   'use strict';
   if (window.__simulationEndingV94Installed) return;
@@ -22447,6 +22713,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <style id="final-role-title-position-fix-v95">
+/* REVIEW STYLE 48 | final-role-title-position-fix-v95 */
 /* Final role-title placement: raised and centered in the portrait column. */
 #selectPanel .select-grid .card.has-character-portrait:not(.locked) .character-role-under-portrait {
   position: absolute !important;
@@ -22479,6 +22746,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 </style>
 
 <script id="final-role-title-position-fix-script-v95">
+// REVIEW SCRIPT 33 | final-role-title-position-fix-script-v95
 (function () {
   function placeRoleTitlesV95() {
     document.querySelectorAll('#selectPanel .select-grid .card.has-character-portrait:not(.locked)').forEach(function (card) {
@@ -22513,6 +22781,7 @@ body.battle-flow-active #selectFloatingHud #startBtn,
 
 
 <style id="select-panel-ends-above-floating-hud-v96">
+/* REVIEW STYLE 49 | select-panel-ends-above-floating-hud-v96 */
 /* Party Select bottom cleanup: the character area ends above the fixed Selected/Start bar.
    The clearance is outside #selectPanel, so the panel/card area no longer continues behind the bar. */
 html.select-hud-floating-active #selectPanel,
@@ -22545,6 +22814,7 @@ body.select-hud-floating-active #selectFloatingHud {
 </style>
 
 <script id="select-panel-ends-above-floating-hud-script-v96">
+// REVIEW SCRIPT 34 | select-panel-ends-above-floating-hud-script-v96
 (function () {
   'use strict';
   if (window.__selectPanelEndsAboveHudV96Installed) return;
@@ -22638,6 +22908,7 @@ body.select-hud-floating-active #selectFloatingHud {
 
 
 <style id="mimic-menu-paged-dark-final-css">
+/* REVIEW STYLE 50 | mimic-menu-paged-dark-final-css */
   #subMenu .mimic-paged-menu.v28-menu-host {
     width: 100% !important;
     max-width: 100% !important;
@@ -22745,6 +23016,7 @@ body.select-hud-floating-active #selectFloatingHud {
 </style>
 
 <script id="mimic-menu-detail-toggle-rerender-final-js">
+// REVIEW SCRIPT 35 | mimic-menu-detail-toggle-rerender-final-js
 (function(){
   "use strict";
   if (window.__mimicMenuDetailToggleRerenderFinal) return;
@@ -22782,6 +23054,7 @@ body.select-hud-floating-active #selectFloatingHud {
 
 
 <style id="simulation-ending-v96-true-viewport">
+/* REVIEW STYLE 51 | simulation-ending-v96-true-viewport */
   html.simulation-ending-v96-active,
   html.simulation-ending-v96-active body,
   body.simulation-ending-v96-active {
@@ -22895,6 +23168,7 @@ body.select-hud-floating-active #selectFloatingHud {
   }
 </style>
 <script id="simulation-ending-v96-true-viewport-script">
+// REVIEW SCRIPT 36 | simulation-ending-v96-true-viewport-script
 (function(){
   'use strict';
   if (window.__simulationEndingV96Installed) return;
@@ -22961,6 +23235,7 @@ body.select-hud-floating-active #selectFloatingHud {
   function showSimulationEscapeEndingV96() {
     if (window.__simulationEscapeEndingV96Started) return;
     window.__simulationEscapeEndingV96Started = true;
+    window.RpgSaves.finish("escaped");
     activateEndingStateV96();
     playEndingMusicV96();
     try { phase = 'ending'; } catch (_) {}
@@ -23011,6 +23286,7 @@ body.select-hud-floating-active #selectFloatingHud {
 
 
 <script id="prefight-shift-return-block-v97">
+// REVIEW SCRIPT 37 | prefight-shift-return-block-v97
 (function installPrefightDialogueShiftReturnBlockV97(){
   'use strict';
   if (window.__prefightDialogueShiftReturnBlockV97) return;
@@ -23059,6 +23335,7 @@ body.select-hud-floating-active #selectFloatingHud {
 
 
 <script data-v101-dialogue-status-order-fix>
+// REVIEW SCRIPT 38 | data-v101-dialogue-status-order-fix
 window.__dialogueStatusOrderFixV101 = {
   rule: "Dialogue always finishes before turn-start statuses or forced ailment actions resolve.",
   chainedDialogueAtomic: true,

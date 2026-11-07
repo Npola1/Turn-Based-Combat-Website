@@ -1,0 +1,17 @@
+data/
+node_modules/
+test-results/
+dist/
+.aws-sam/
+.env
+
+# Local credentials and editor/agent state
+.env.*
+!.env.example
+.aws/
+.codex/
+.agents/
+
+# Operating-system download metadata
+.DS_Store
+*Zone.Identifier
