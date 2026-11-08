@@ -7,7 +7,9 @@ const db=await createDatabase({env:{...process.env,RPG_DSQL_USER:'admin'}});
 try{
  await initializeSchema(db);const c=await db.connect();
  try{const role=await c.query('SELECT 1 FROM pg_roles WHERE rolname=$1',['rpg_app']);if(!role.rows.length)await c.query('CREATE ROLE rpg_app WITH LOGIN');
-  await c.query('GRANT USAGE ON SCHEMA public TO rpg_app');
+  // DSQL's built-in public schema already grants USAGE; its ACL is immutable.
+  const access=await c.query("SELECT has_schema_privilege('rpg_app','public','USAGE') AS usable");
+  if(!access.rows[0]?.usable)throw Error('rpg_app cannot access the public schema');
   await c.query('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO rpg_app');
   await c.query(`AWS IAM GRANT rpg_app TO '${arn}'`);
  }finally{c.release();}

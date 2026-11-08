@@ -336,11 +336,29 @@ test('Lambda v2 cookies, HTTPS origin validation and protected slots',()=>withSt
  assert.equal((await api({...write,rawPath:'/api/saves/6',requestContext:{http:{method:'PUT'}}})).statusCode,400);
  assert.equal((await api({...write,body:'{' })).statusCode,400);
 }));
+test('Production player cookies can be scoped to the game directory',()=>withStore(async s=>{
+ const response=await createApi(s,{cookiePath:'/finalfight/'})({rawPath:'/api/saves',requestContext:{http:{method:'GET'}}});assert.equal(response.statusCode,200);assert.match(response.cookies[0],/Path=\/finalfight\/;/);assert.match(response.cookies[0],/Secure/);
+ for(const path of ['bad','/bad; Path=/','/bad\n'])assert.throws(()=>createApi(s,{cookiePath:path}),/Invalid save cookie path/);
+}));
+test('Existing-site deployment owns only game resources and rewrites only its prefix',async()=>{
+ const {readFile}=await import('node:fs/promises');const {runInNewContext}=await import('node:vm');const t=JSON.parse(await readFile(new URL('../aws/existing-site.template.json',import.meta.url),'utf8'));
+ for(const name of ['SiteBucket','Distribution','SitePolicy'])assert.equal(t.Resources[name],undefined);assert.equal(t.Resources.SaveFunction.Properties.Environment.Variables.RPG_COOKIE_PATH['Fn::Sub'],'${SitePrefix}/');
+ const context={};runInNewContext(t.Resources.ApiSiteHeader.Properties.FunctionCode['Fn::Sub'].replaceAll('${SitePrefix}','/finalfight').replaceAll('${SiteDomain}','example.com'),context);
+ const req=uri=>({uri,headers:{host:{value:'example.com'}},querystring:{}});
+ assert.equal(context.handler({request:req('/finalfight/api/saves')}).uri,'/api/saves');assert.equal(context.handler({request:req('/finalfight/')}).uri,'/finalfight/index.html');assert.equal(context.handler({request:req('/finalfight')}).headers.location.value,'/finalfight/');assert.equal(context.handler({request:req('/other-app/')}).uri,'/other-app/');
+ const www=req('/finalfight/');www.headers.host.value='www.example.com';assert.equal(context.handler({request:www}).headers.location.value,'https://example.com/finalfight/');
+});
 test('chunked upload commits atomically, is retry-safe and owner-scoped',()=>withStore(async s=>{
  const p=checkpoint();p.state.large='🧪'.repeat(90000);const bytes=Buffer.from(JSON.stringify(p)),id='00000000-0000-4000-8000-000000000001',size=100000,total=Math.ceil(bytes.length/size);
  for(let i=0;i<total;i++)await s.stageUpload('alice',{id,index:i,total,path:'/api/saves/1',method:'PUT',data:bytes.subarray(i*size,(i+1)*size).toString('base64')});
  await assert.rejects(()=>s.commitUpload('bob',id));assert.equal(await s.load('alice',1),null);await s.commitUpload('alice',id);await s.commitUpload('alice',id);assert.deepEqual((await s.load('alice',1)).state,p.state);
  const response=await s.stageResponse('alice',Buffer.from(JSON.stringify((await s.load('alice',1)))));const b=[];for(let i=0;i<response.__rpgChunked.parts;i++)b.push(Buffer.from((await s.responsePart('alice',response.__rpgChunked.id,i)).data,'base64'));assert.deepEqual(JSON.parse(Buffer.concat(b)).state,p.state);await assert.rejects(()=>s.responsePart('bob',response.__rpgChunked.id,0));
+}));
+test('Small transport chunks support more than 64 parts without changing the save',()=>withStore(async s=>{
+ const payload=checkpoint();payload.state.note='🧪'.repeat(200);const bytes=Buffer.from(JSON.stringify(payload)),size=16,total=Math.ceil(bytes.length/size),id='00000000-0000-4000-8000-000000000099';assert.ok(total>64&&total<=2048);
+ for(let index=0;index<total;index++)await s.stageUpload('alice',{id,index,total,path:'/api/saves/1',method:'PUT',data:bytes.subarray(index*size,(index+1)*size).toString('base64')});
+ await s.commitUpload('alice',id);assert.deepEqual((await s.load('alice',1)).state,payload.state);
+ await assert.rejects(()=>s.stageUpload('alice',{id,index:0,total:2049,path:'/api/saves/1',method:'PUT',data:'e30='}),/Invalid upload chunk/);
 }));
 test('Legacy migration preserves checkpoint, inventory, branch history and decisions without overwrite',()=>withStore(async(s,db)=>{
  const {importLegacy}=await import('../server/import-legacy.js');const p=checkpoint(),time='2026-01-01 00:00:00';
@@ -351,6 +369,12 @@ test('Legacy migration preserves checkpoint, inventory, branch history and decis
 test('Legacy import SQL failure rolls back the entire dataset',()=>withStore(async(s,db)=>{
  const {importLegacy}=await import('../server/import-legacy.js');const p=checkpoint();const legacy={players:[{id:'alice',display_name:'Player'}],battles:[],saves:[{id:'missing-parent',player_id:'alice',slot:1,battle_id:p.battleId,schema_version:2,state_json:JSON.stringify(p.state),updated_at:'now'}],inventory:[],combat_decisions:[]};await assert.rejects(()=>importLegacy(db,legacy));const c=await db.connect();try{assert.equal(Number((await c.query('SELECT COUNT(*) AS n FROM players')).rows[0].n),0);}finally{c.release();}
 }));
+test('DSQL asynchronous index jobs use CALL and wait before initialization returns',async()=>{
+ const calls=[];let released=false;
+ const client={async query(sql,values){calls.push([sql,values]);if(sql.startsWith('SELECT 1 FROM pg_indexes'))return {rows:[]};if(sql.startsWith('CREATE INDEX ASYNC'))return {rows:[{job_id:'test-index-job'}]};if(sql.includes('sys.wait_for_job')){assert.equal(sql,'CALL sys.wait_for_job($1)');assert.deepEqual(values,['test-index-job']);}return {rows:[]};},release(){released=true;}};
+ await initializeSchema({dialect:'dsql',async connect(){return client;}});
+ assert.equal(calls.filter(([sql])=>sql.startsWith('CALL sys.wait_for_job')).length,3);assert.equal(released,true);
+});
 test('Lambda refuses local fallback and DSQL needs an explicit region',async()=>{
  await assert.rejects(()=>createDatabase({env:{AWS_LAMBDA_FUNCTION_NAME:'game',DATABASE_URL:'postgres://unused'},localPath:':memory:'}),/Lambda requires/);
  await assert.rejects(()=>createDatabase({env:{RPG_DSQL_HOST:'example.dsql.eu-west-1.on.aws'}}),/AWS_REGION/);
@@ -360,8 +384,14 @@ test('Deployment keeps the database and API private and forwards signed bodies w
  assert.equal(r.SaveFunction.Properties.FunctionUrlConfig.AuthType,'AWS_IAM');assert.equal(r.GameDatabase.DeletionPolicy,'Retain');assert.equal(r.GameDatabase.Properties.DeletionProtectionEnabled,true);
  const config=r.Distribution.Properties.DistributionConfig,api=config.CacheBehaviors.find(b=>b.PathPattern==='/api/*');assert.equal(api.CachePolicyId,'4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
  assert.equal(r.AllowCloudFrontUrl.Properties.Action,'lambda:InvokeFunctionUrl');assert.equal(r.AllowCloudFrontInvoke.Properties.InvokedViaFunctionUrl,true);assert.ok(r.AllowCloudFrontInvoke.Properties.SourceArn);
- assert.equal(r.SiteBucket.Properties.PublicAccessBlockConfiguration.BlockPublicPolicy,true);assert.equal(r.ApiRequestPolicy.Properties.OriginRequestPolicyConfig.CookiesConfig.CookieBehavior,'all');assert.ok(r.ApiRequestPolicy.Properties.OriginRequestPolicyConfig.HeadersConfig.Headers.includes('x-amz-content-sha256'));
+ assert.equal(r.SiteBucket.Properties.PublicAccessBlockConfiguration.BlockPublicPolicy,true);assert.equal(api.OriginRequestPolicyId,'b689b0a8-53d0-40ab-baf2-68738e2966ac','Managed AllViewerExceptHostHeader forwards cookies and signed payload headers without forwarding the site Host');assert.equal(r.ApiRequestPolicy,undefined,'Do not require a custom policy on the existing Free plan');
  const {runInNewContext}=await import('node:vm');const request={headers:{host:{value:'game.example'},'x-rpg-site-origin':{value:'https://evil.example'}}};const context={};runInNewContext(r.ApiSiteHeader.Properties.FunctionCode,context);assert.equal(context.handler({request}).headers['x-rpg-site-origin'].value,'https://game.example');
+});
+test('CloudFront deployment preserves shared settings and all unrelated routes',async()=>{
+ const {prepareGameRoutes}=await import('./prepare-cloudfront.mjs');
+ const current={Comment:'Portfolio',DefaultRootObject:'index.html',Aliases:{Quantity:1,Items:['example.com']},Origins:{Quantity:1,Items:[{Id:'portfolio',DomainName:'website.example.com',OriginPath:''}]},DefaultCacheBehavior:{TargetOriginId:'portfolio',ViewerProtocolPolicy:'redirect-to-https',CachePolicyId:'original-cache',FunctionAssociations:{Quantity:1,Items:[{FunctionARN:'existing-redirect',EventType:'viewer-request'}]}},CacheBehaviors:{Quantity:1,Items:[{PathPattern:'/other-app/*',TargetOriginId:'portfolio',CachePolicyId:'other-cache'}]}};
+ const original=structuredClone(current),outputs={ApiFunctionUrl:'https://example.lambda-url.eu-west-1.on.aws/',ApiOriginAccessControlId:'game-oac',ApiOriginRequestPolicyId:'game-policy',ApiSiteHeaderFunctionArn:'game-function'};
+ const next=prepareGameRoutes(current,outputs);assert.deepEqual(current,original);assert.deepEqual(next.DefaultCacheBehavior,original.DefaultCacheBehavior);assert.deepEqual(next.Aliases,original.Aliases);assert.equal(next.DefaultRootObject,'index.html');assert.deepEqual(next.Origins.Items[0],original.Origins.Items[0]);assert.deepEqual(next.CacheBehaviors.Items.at(-1),original.CacheBehaviors.Items[0]);assert.deepEqual(next.CacheBehaviors.Items.slice(0,3).map(b=>b.PathPattern),['/finalfight/api/*','/finalfight','/finalfight/*']);assert.equal(next.Origins.Quantity,2);assert.throws(()=>prepareGameRoutes(current,outputs,'/'),/Invalid game prefix/);
 });
 test('Live Aurora DSQL/IAM deployment', {skip:'Requires deployment to an AWS account; local PostgreSQL tests do not validate live DSQL or CloudFront IAM.'},()=>{});
 test('incomplete/conflicting upload cannot create a partial checkpoint',()=>withStore(async s=>{
@@ -1502,15 +1532,17 @@ async function testSaveFlow() {
 const { default: assert } = await import("node:assert/strict");
 const { launchTestBrowser } = await import("./browser-automation.mjs");
 const baseUrl = process.env.RPG_TEST_URL || 'http://localhost:3011';
+const apiPrefix = new URL(baseUrl).pathname.replace(/\/$/, '');
 const errors=[];
 const session=await launchTestBrowser({onEvent(method,p){if(method==='Runtime.exceptionThrown')errors.push(p.exceptionDetails);}});
 const send=async(method,params={})=>({result:await session.page.call(method,params)});
 const ev=async expression=>{const m=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(m.result?.exceptionDetails)throw Error(JSON.stringify(m.result.exceptionDetails));return m.result.result.value;};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const poll=async(expression,timeout=10000)=>{for(let i=0;i<timeout/100;i++){if(await ev(expression))return;await wait(100);}throw Error('Timeout: '+expression);};
-const get=path=>ev(`fetch(${JSON.stringify(path)}).then(r=>r.json())`);
+const get=path=>ev(`fetch(${JSON.stringify(apiPrefix + path)}).then(r=>r.json())`);
 try {
 await send('Runtime.enable');await send('Page.enable');await send('Page.navigate',{url:baseUrl});await wait(1200);
+await ev(`window.__saveTestFailures=[];const originalFetch=window.fetch;window.fetch=async function(...args){const response=await originalFetch.apply(this,args);if(!response.ok&&String(args[0]).includes('/api/'))window.__saveTestFailures.push({path:String(args[0]),status:response.status,body:await response.clone().text()});return response;};`);
 await ev("document.getElementById('introYesBtnV56').click()");
 await poll("document.querySelector('.rpg-save-dialog')?.open");
 await poll("document.querySelectorAll('.rpg-save-slot').length===6");
@@ -1522,7 +1554,7 @@ await ev("[...document.querySelectorAll('#candidateGrid > .card')].slice(0,3).fo
 assert.deepEqual(await get('/api/saves'),[]);
 console.log('No autosave during introductory cutscenes');
 await ev(`new Promise(resolve=>{let n=0;const timer=setInterval(()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));window.dispatchEvent(new KeyboardEvent('keydown',{key:'Control',code:'ControlLeft',bubbles:true}));if(++n===400 || (!document.querySelector('#rpg-save-controls [data-save]').disabled && getComputedStyle(document.getElementById('dialogueOverlay')).display==='none')){clearInterval(timer);resolve('intro finished');}},70);})`);
-await poll("fetch('/api/saves').then(r=>r.json()).then(s=>s.some(x=>x.slot===6))");
+await poll(`fetch('${apiPrefix}/api/saves').then(r=>r.json()).then(s=>s.some(x=>x.slot===6))`,30000);
 const auto = await get('/api/saves/6');
 console.log('Autosave created',JSON.stringify({actor:auto.state.flags.currentActorIdx,party:auto.state.party.map(x=>x.name)}));
 await poll("!document.querySelector('#rpg-save-controls [data-save]').disabled");
@@ -1536,7 +1568,7 @@ await ev("window.__testRandom=Math.random;Math.random=()=>0.99;[...document.quer
 assert.equal(await ev("document.querySelector('#rpg-save-controls [data-save]').disabled"),true);
 await ev("[...document.querySelectorAll('#subMenu button')].find(b=>/Confirm Guard/.test(b.textContent)).click()");
 await poll("!document.querySelector('#rpg-save-controls [data-save]').disabled");
-await poll("fetch('/api/history').then(r=>r.json()).then(h=>h[0]?.decisions.length===1)");
+await poll(`fetch('${apiPrefix}/api/history').then(r=>r.json()).then(h=>h[0]?.decisions.length===1)`,30000);
 assert.deepEqual((await get('/api/saves/6')).state, auto.state);
 await ev("document.querySelector('#rpg-save-controls [data-save]').click()");await poll("document.querySelector('.rpg-save-slot[data-slot=\"1\"]')");
 await ev("document.querySelector('.rpg-save-slot[data-slot=\"1\"]').click()");
@@ -1567,7 +1599,7 @@ const oldOpening=await get('/api/saves/6'), manualBeforeNewBattle=await get('/ap
 await ev("document.getElementById('startBtn').click()");
 assert.equal(await ev("!!document.querySelector('.rpg-save-dialog')"),false);
 await ev(`new Promise(resolve=>{let n=0;const timer=setInterval(()=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));window.dispatchEvent(new KeyboardEvent('keydown',{key:'Control',code:'ControlLeft',bubbles:true}));if(++n===400 || (!document.querySelector('#rpg-save-controls [data-save]').disabled && getComputedStyle(document.getElementById('dialogueOverlay')).display==='none')){clearInterval(timer);resolve();}},70);})`);
-await poll(`fetch('/api/saves/6').then(r=>r.json()).then(x=>x.state.battleId!==${JSON.stringify(oldOpening.state.battleId)})`);
+await poll(`fetch('${apiPrefix}/api/saves/6').then(r=>r.json()).then(x=>x.state.battleId!==${JSON.stringify(oldOpening.state.battleId)})`);
 assert.deepEqual((await get('/api/saves/1')).state,manualBeforeNewBattle.state);
 console.log('A second battle replaces only slot 6 after the opening sequence');
 await ev("window.__testRandom = Math.random; Math.random=()=>0.99");
@@ -1597,7 +1629,7 @@ await session.close();
 
 } catch (error) {
   console.error(error);process.exitCode=1;
-  try { console.error('DOM STATE',await ev("({status:document.querySelector('#rpg-save-controls [role=status]')?.textContent,menu:document.getElementById('menu')?.textContent,sub:document.getElementById('subMenu')?.textContent})")); } catch {}
+  try { console.error('DOM STATE',await ev("({status:document.querySelector('#rpg-save-controls [role=status]')?.textContent,menu:document.getElementById('menu')?.textContent,sub:document.getElementById('subMenu')?.textContent,apiFailures:window.__saveTestFailures})")); } catch {}
   await session.close();
 }
 
@@ -2140,20 +2172,20 @@ async function testApiResilience(){
 
 // Isolated same-origin test proxy. Each page case gets its own backend identity;
 // actual API, save-system.js and PostgreSQL code remain unchanged.
-async function withIntegrationBrowser(id,documentFactory,task){
+async function withIntegrationBrowser(id,documentFactory,task,{mountPath=''}={}){
   const {createServer}=await import('node:http');const {createHash}=await import('node:crypto');const {readFile}=await import('node:fs/promises');const {launchTestBrowser}=await import('./browser-automation.mjs');
   const backend=process.env.RPG_TEST_URL;if(!backend)throw Error('Integration suite requires its temporary server');
   const original=await readFile(absolutePath(PROJECT_ROOT,'index.html'),'utf8');
-  const server=createServer(async(req,res)=>{try{const uri=new URL(req.url,'http://localhost');if(uri.pathname==='/'){res.setHeader('Content-Type','text/html');return res.end(documentFactory(original));}
+  const server=createServer(async(req,res)=>{try{const uri=new URL(req.url,'http://localhost');if(mountPath){if(!uri.pathname.startsWith(mountPath+'/')){res.writeHead(404);return res.end();}uri.pathname=uri.pathname.slice(mountPath.length);}if(uri.pathname==='/'){res.setHeader('Content-Type','text/html');return res.end(documentFactory(original));}
     if(id==='journeys'&&uri.pathname==='/save-system.js'){
       const source=await readFile(absolutePath(PROJECT_ROOT,'save-system.js'),'utf8');
       const instrumented=source.replace('  window.RpgSaves = {', '  window.__saveReadinessProbe = () => ({session:!!session,ready,readyGeneration,enemyDepth,busy,outcome,adapterReady:adapter.isReady(),canSave:canSave()});\n  window.RpgSaves = {');
       res.setHeader('Content-Type','text/javascript');return res.end(instrumented);
     }
     const headers={...req.headers};delete headers.host;delete headers.origin;delete headers['content-length'];const ref=new URL(req.headers.referer||'http://localhost');const identity=ref.searchParams.get('case')||'shared';headers.cookie='rpg_player='+createHash('sha256').update(id+identity).digest('hex');
-    const chunks=[];for await(const chunk of req)chunks.push(chunk);const r=await fetch(backend+req.url,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)});res.writeHead(r.status,Object.fromEntries([...r.headers].filter(([k])=>!['transfer-encoding','content-encoding','content-length'].includes(k))));res.end(Buffer.from(await r.arrayBuffer()));
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);const r=await fetch(backend+uri.pathname+uri.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)});res.writeHead(r.status,Object.fromEntries([...r.headers].filter(([k])=>!['transfer-encoding','content-encoding','content-length'].includes(k))));res.end(Buffer.from(await r.arrayBuffer()));
   }catch(error){res.writeHead(500);res.end(String(error));}});
-  let browser;try{await new Promise(r=>server.listen(0,'127.0.0.1',r));browser=await launchTestBrowser();const base=`http://127.0.0.1:${server.address().port}`;const evaluate=async(fn,...args)=>{const expression=typeof fn==='function'?`(${fn.toString()})(...${JSON.stringify(args)})`:fn;const r=await browser.page.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
+  let browser;try{await new Promise(r=>server.listen(0,'127.0.0.1',r));browser=await launchTestBrowser();const base=`http://127.0.0.1:${server.address().port}${mountPath}`;const evaluate=async(fn,...args)=>{const expression=typeof fn==='function'?`(${fn.toString()})(...${JSON.stringify(args)})`:fn;const r=await browser.page.call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
     await task({browser,base,ev:evaluate,navigate:async name=>browser.page.call('Page.navigate',{url:base+'/?case='+encodeURIComponent(name)})});
   }finally{if(browser)await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
@@ -2193,7 +2225,7 @@ async function testSaveTransport(){
       await fresh();await poll(async()=>!!(await (await fetch('/api/saves/6')).json()),'opening committed');
       await ev(()=>{window.__state.large='🧪漢字'.repeat(140000);});await selectSave();
       await poll(()=>!document.querySelector('.rpg-save-dialog'),'large save committed',20000);
-      const evidence=await ev(async()=>{const writes=window.__calls.filter(c=>c.method==='POST'||c.method==='PUT');for(const c of writes){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(c.body));const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==c.hash)throw Error('Body hash mismatch: '+c.path);}return {parts:writes.filter(c=>c.path==='/api/uploads').length,hashesVerified:writes.length};});
+      const evidence=await ev(async()=>{const writes=window.__calls.filter(c=>c.method==='POST'||c.method==='PUT');for(const c of writes){if(new TextEncoder().encode(c.body).length>8192)throw Error('Request exceeds the shared WAF body limit: '+c.path);const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(c.body));const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');if(hash!==c.hash)throw Error('Body hash mismatch: '+c.path);}return {parts:writes.filter(c=>c.path==='/api/uploads').length,hashesVerified:writes.length};});
       assert(evidence.parts>1,'Large save must use transport chunks');await navigate('Large Unicode saves use signed chunks and restore after refresh');await ev(()=>RpgSaves.openPicker()&&undefined);await poll(slots,'refresh load picker');await ev(()=>document.querySelector('[data-slot="1"]').click());await poll(()=>!document.querySelector('.rpg-save-dialog'),'large load restored',20000);
       assert(await ev(()=>window.__state.large==='🧪漢字'.repeat(140000)),'Exact Unicode snapshot restored');assert(await ev(()=>window.__calls.some(c=>c.path.startsWith('/api/responses/'))),'Large load fetched response chunks');return evidence;
     });
@@ -2204,6 +2236,17 @@ async function testSaveTransport(){
     });
     await test('Save readiness waits for animation completion and invalidates stale callbacks',async()=>{await fresh();await ev(()=>{window.__ready=false;RpgSaves.invalidate();RpgSaves.ready();RpgSaves.enemyPhaseStart();window.__ready=true;});await waitFor(40);assert(await ev(()=>document.querySelector('[data-save]').disabled),'Enemy phase invalidates queued readiness');await ev(()=>RpgSaves.enemyPhaseEnd());await poll(()=>!document.querySelector('[data-save]').disabled,'next prepared turn');});
   });
+  await withIntegrationBrowser('transport-prefix',page,async({ev,navigate})=>{
+    const name='Save and restore work under /finalfight/ without using root API routes';
+    async function poll(fn,label){const until=Date.now()+10000;while(Date.now()<until){if(await ev(fn))return;await waitFor(20);}throw Error('Timed out: '+label);}
+    try{
+      await navigate(name);await ev(()=>RpgSaves.openPicker()&&undefined);await poll(()=>document.querySelectorAll('.rpg-save-slot').length===6,'prefixed picker');
+      await ev(()=>{[...document.querySelectorAll('button')].find(b=>b.textContent==='New Battle').click();RpgSaves.begin();RpgSaves.openingFinished();});await poll(()=>document.querySelector('#rpg-save-controls [role=status]').textContent.includes('saved'),'prefixed autosave');
+      await ev(()=>document.querySelector('[data-save]').click());await poll(()=>!!document.querySelector('[data-slot="1"]'),'manual picker');await ev(()=>document.querySelector('[data-slot="1"]').click());await poll(()=>!document.querySelector('.rpg-save-dialog'),'manual save');
+      await navigate(name);await ev(()=>RpgSaves.openPicker()&&undefined);await poll(()=>document.querySelectorAll('.rpg-save-slot').length===6,'load picker');await ev(()=>document.querySelector('[data-slot="1"]').click());await poll(()=>!document.querySelector('.rpg-save-dialog'),'restored checkpoint');
+      assert(await ev(()=>window.__state.party[0].hp===100),'Prefixed save restores exact HP');const paths=await ev(()=>window.__calls.map(c=>c.path));assert(paths.length>0&&paths.every(p=>p.startsWith('/finalfight/api/')),'All API requests stay inside the game prefix');results.push({group:'Subdirectory deployment',name,passed:true,evidence:{paths}});
+    }catch(error){results.push({group:'Subdirectory deployment',name,passed:false,error:String(error)});}
+  },{mountPath:'/finalfight'});
   await emitExpandedReport('transport',{results,scope:'Actual save-system.js UI and real HTTP/PostgreSQL, with deterministic injected network errors, timeouts, response loss and delayed writes. Timeout/retry waits are shortened in the test page only.'});
 }
 

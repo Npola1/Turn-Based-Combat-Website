@@ -57,6 +57,11 @@ To preview against an initialized DSQL cluster, set `RPG_DSQL_HOST`, `AWS_REGION
 
 ### Deploy to AWS
 
+To deploy under **/finalfight/** on an existing website, use the
+[existing website deployment guide](DEPLOYMENT.md). It preserves the shared
+website and scopes all game routing and uploads to `/finalfight/`.
+The instructions below create a separate, standalone website.
+
 The repository includes a SAM/CloudFormation template at `aws/template.json`. It creates a single-region DSQL cluster, Lambda and its IAM role, a private encrypted S3 bucket, and an HTTPS CloudFront distribution. It does not require an always-running database instance, API Gateway, a NAT gateway or an RDS proxy. AWS usage is billable; this does not guarantee a zero bill.
 
 Use an AWS region that supports Aurora DSQL. Install and configure the AWS CLI and AWS SAM CLI separately, then:
@@ -88,7 +93,7 @@ aws cloudfront create-invalidation --distribution-id '<DistributionId output>' -
 
 Open the `WebsiteUrl` output and verify a new battle, autosave, manual save, refresh/load and history in AWS. On later releases, rebuild, redeploy Lambda, sync the site and invalidate CloudFront. Run schema initialization when adding schema objects; it does not transform incompatible existing schemas.
 
-Database deletion protection and stack retention protect against accidental stack deletion; they are not a backup plan. Configure the backup/export and retention policy you need before production. Logs retain seven days. Custom domains, account login, scheduled data cleanup, monitoring and a live AWS deployment smoke test are not configured by this rewrite.
+Database deletion protection and stack retention protect against accidental stack deletion; they are not a backup plan. Logs retain seven days. The existing website deployment is documented separately; account login, scheduled data cleanup and additional monitoring are not configured by these templates.
 
 AWS references: [DSQL schema support](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/create-table-syntax-support.html), [DSQL quotas](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CHAP_quotas.html), [IAM authentication](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/SECTION_authentication-token.html), and [CloudFront access to Lambda Function URLs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html).
 
@@ -155,7 +160,7 @@ npm run test:journeys
 npm run test:matrix
 ```
 
-`test:unit` runs the database and browser-selection sections. Database tests use real local PostgreSQL via PGlite, fault-injected OCC conflicts, Lambda HTTP v2 events, large Unicode payloads and legacy-import fixtures. Live DSQL/IAM/CloudFront verification is explicitly marked SKIP until deployed; local tests do not prove AWS service compatibility. `node scripts/test-game.mjs --list` lists section IDs; `--suite <id>` selects one directly. Set `RPG_ALL_REPORT_DIR` to change the output directory, or `RPG_SUITE_TIMEOUT_MS` to change the default 20-minute limit per section. Browser selection follows the system preference described below.
+`test:unit` runs the database and browser-selection sections. Database tests use real local PostgreSQL via PGlite, fault-injected OCC conflicts, Lambda HTTP v2 events, large Unicode payloads and legacy-import fixtures. Local runs skip live DSQL/IAM/CloudFront verification; run the separate live smoke command in the [deployment guide](DEPLOYMENT.md) to check AWS. `node scripts/test-game.mjs --list` lists section IDs; `--suite <id>` selects one directly. Set `RPG_ALL_REPORT_DIR` to change the output directory, or `RPG_SUITE_TIMEOUT_MS` to change the default 20-minute limit per section. Browser selection follows the system preference described below.
 
 These tests cover the existing regression scenarios across the game; they do not exhaust every possible battle state or verify physical speakers and artistic appearance. The individual sections' coverage and limitations follow.
 

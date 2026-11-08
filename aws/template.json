@@ -177,31 +177,6 @@
         "FunctionCode": "function handler(event) { var request = event.request; request.headers['x-rpg-site-origin'] = { value: 'https://' + request.headers.host.value }; return request; }"
       }
     },
-    "ApiRequestPolicy": {
-      "Type": "AWS::CloudFront::OriginRequestPolicy",
-      "Properties": {
-        "OriginRequestPolicyConfig": {
-          "Name": {
-            "Fn::Sub": "${AWS::StackName}-save-api"
-          },
-          "CookiesConfig": {
-            "CookieBehavior": "all"
-          },
-          "QueryStringsConfig": {
-            "QueryStringBehavior": "all"
-          },
-          "HeadersConfig": {
-            "HeaderBehavior": "whitelist",
-            "Headers": [
-              "Origin",
-              "Content-Type",
-              "x-amz-content-sha256",
-              "x-rpg-site-origin"
-            ]
-          }
-        }
-      }
-    },
     "Distribution": {
       "Type": "AWS::CloudFront::Distribution",
       "Properties": {
@@ -300,9 +275,7 @@
               ],
               "Compress": true,
               "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
-              "OriginRequestPolicyId": {
-                "Ref": "ApiRequestPolicy"
-              },
+              "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
               "FunctionAssociations": [
                 {
                   "EventType": "viewer-request",

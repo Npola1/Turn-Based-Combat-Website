@@ -17,7 +17,7 @@ export async function initializeSchema(database) {
       if (database.dialect === 'dsql') {
         const job = result.rows[0]?.job_id;
         if (!job) throw Error('DSQL index creation did not return a job ID: ' + name);
-        await client.query('SELECT sys.wait_for_job($1)', [job]);
+        await client.query('CALL sys.wait_for_job($1)', [job]);
       }
     }
   } finally { client.release(); }

@@ -176,7 +176,7 @@ export function createStore(database, { maxAttempts = 8, delay = ms => new Promi
     }),
     stageUpload: (player,part) => transaction(async c => {
       await cleanup(c,player);
-      requireValue(part && /^[a-f0-9-]{36}$/.test(part.id) && Number.isInteger(part.index) && Number.isInteger(part.total) && part.total>0 && part.total<=64 && part.index>=0 && part.index<part.total && typeof part.data==='string' && part.data.length<=262144 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(part.data), 'Invalid upload chunk');
+      requireValue(part && /^[a-f0-9-]{36}$/.test(part.id) && Number.isInteger(part.index) && Number.isInteger(part.total) && part.total>0 && part.total<=2048 && part.index>=0 && part.index<part.total && typeof part.data==='string' && part.data.length<=262144 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(part.data), 'Invalid upload chunk');
       requireValue((part.method==='POST' && ['/api/autosave','/api/battles/events'].includes(part.path)) || (part.method==='PUT' && /^\/api\/saves\/[1-6]$/.test(part.path)), 'Invalid upload destination');
       let head=await one(c,'SELECT * FROM request_chunks WHERE player_id=$1 AND upload_id=$2 AND part=-1',[player,part.id]);
       if(!head){const active=await one(c,'SELECT COUNT(*) AS n FROM request_chunks WHERE player_id=$1 AND part=-1 AND completed=FALSE',[player]);requireValue(Number(active.n)<4,'Too many pending uploads',429);await c.query('INSERT INTO request_chunks VALUES ($1,$2,-1,$3,$4,$5,\'\',FALSE,$6)',[player,part.id,part.total,part.method,part.path,new Date().toISOString()]);head={part_count:part.total,method:part.method,path:part.path};}

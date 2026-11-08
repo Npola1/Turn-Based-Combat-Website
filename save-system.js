@@ -9,6 +9,8 @@
   let logs = [], intent = null, enemyIntent = null, baseline = null, outcome = null;
   let queue = Promise.resolve(), pickerPromise, flushScheduled = false, readyTimer;
   const showStatus = text => { if (statusNode) statusNode.textContent = text; };
+  // Keep API calls inside the same deployed game directory (root locally).
+  const apiBase = new URL('.', document.currentScript?.src || location.href).pathname.replace(/\/$/, '');
   const utf8 = new TextEncoder();
   const uploadIds = new WeakMap();
   const hex = bytes => [...new Uint8Array(bytes)].map(n => n.toString(16).padStart(2, '0')).join('');
@@ -21,7 +23,7 @@
       const headers = new Headers(options.headers || {});
       // CloudFront OAC signs Lambda requests. POST/PUT bodies need their exact hash.
       if (options.body !== undefined) headers.set('x-amz-content-sha256', hex(await crypto.subtle.digest('SHA-256', utf8.encode(options.body))));
-      const response = await fetch(path, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
+      const response = await fetch(apiBase + path, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
       if (!response.ok) { const error = await response.json().catch(() => ({})); throw Error(error.error || `Request failed (${response.status})`); }
       return await response.json();
     } finally { clearTimeout(timeout); }
@@ -40,12 +42,14 @@
     const text = JSON.stringify(body), bytes = utf8.encode(text);
     if (bytes.length > 8 * 1024 * 1024) throw Error('Save exceeds the 8 MiB request limit');
     const send = (route, payload, verb = 'POST') => api(route, { method: verb, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (bytes.length <= 256 * 1024) return send(path, body, method);
+    // The shared site's managed WAF rule limits each request body to 8 KiB.
+    // Leave room for JSON/base64 metadata while preserving the full save limit.
+    if (bytes.length <= 7 * 1024) return send(path, body, method);
     // Reuse an operation's receipt on retry. A new manual save gets a fresh ID,
     // even if its state matches an earlier save that has since been overwritten.
     let id = uploadIds.get(body);
     if (!id) { id = crypto.randomUUID(); uploadIds.set(body, id); }
-    const size = 180 * 1024, total = Math.ceil(bytes.length / size);
+    const size = 5 * 1024, total = Math.ceil(bytes.length / size);
     for (let index = 0; index < total; index++) await send('/api/uploads', { id, index, total, path, method, data: base64(bytes.subarray(index * size, (index + 1) * size)) });
     return send(`/api/uploads/${id}/commit`, {});
   }

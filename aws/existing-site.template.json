@@ -1,0 +1,255 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Transform": "AWS::Serverless-2016-10-31",
+  "Description": "Finalfight Lambda/DSQL backend for an existing website; owns no shared website resources.",
+  "Resources": {
+    "GameDatabase": {
+      "Type": "AWS::DSQL::Cluster",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "DeletionProtectionEnabled": true,
+        "Tags": [
+          {
+            "Key": "Application",
+            "Value": {
+              "Ref": "AWS::StackName"
+            }
+          }
+        ]
+      }
+    },
+    "ApiLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${AWS::StackName}-api"
+        },
+        "RetentionInDays": 7
+      }
+    },
+    "ApiRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "SaveDatabaseAndLogs",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "dsql:DbConnect",
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GameDatabase",
+                      "ResourceArn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:*"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "SaveFunction": {
+      "Type": "AWS::Serverless::Function",
+      "DependsOn": [
+        "ApiLogGroup"
+      ],
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${AWS::StackName}-api"
+        },
+        "CodeUri": "../dist/lambda/",
+        "Handler": "index.handler",
+        "Runtime": "nodejs22.x",
+        "Architectures": [
+          "arm64"
+        ],
+        "MemorySize": 512,
+        "Timeout": 120,
+        "Role": {
+          "Fn::GetAtt": [
+            "ApiRole",
+            "Arn"
+          ]
+        },
+        "Environment": {
+          "Variables": {
+            "RPG_DSQL_HOST": {
+              "Fn::GetAtt": [
+                "GameDatabase",
+                "Endpoint"
+              ]
+            },
+            "RPG_DSQL_USER": "rpg_app",
+            "RPG_COOKIE_PATH": {
+              "Fn::Sub": "${SitePrefix}/"
+            }
+          }
+        },
+        "FunctionUrlConfig": {
+          "AuthType": "AWS_IAM",
+          "InvokeMode": "BUFFERED"
+        }
+      }
+    },
+    "ApiAccess": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": {
+            "Fn::Sub": "${AWS::StackName}-api"
+          },
+          "OriginAccessControlOriginType": "lambda",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4"
+        }
+      }
+    },
+    "ApiSiteHeader": {
+      "Type": "AWS::CloudFront::Function",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-api-origin"
+        },
+        "AutoPublish": true,
+        "FunctionConfig": {
+          "Comment": "Route only the game prefix, preserve the website www redirect and set the signed API origin.",
+          "Runtime": "cloudfront-js-2.0"
+        },
+        "FunctionCode": {
+          "Fn::Sub": "function handler(event) {\n    var request = event.request;\n    var prefix = '${SitePrefix}';\n    var host = request.headers.host.value.toLowerCase();\n    var query = [];\n    var params = request.querystring || {};\n    Object.keys(params).forEach(function(key) {\n        var values = params[key].multiValue || [params[key]];\n        values.forEach(function(entry) { query.push(key + '=' + entry.value); });\n    });\n    var suffix = query.length ? '?' + query.join('&') : '';\n    if (host === 'www.${SiteDomain}') {\n        return {statusCode:301,statusDescription:'Moved Permanently',headers:{location:{value:'https://${SiteDomain}'+request.uri+suffix},'cache-control':{value:'public, max-age=300'}}};\n    }\n    if (request.uri === prefix) {\n        return {statusCode:302,statusDescription:'Found',headers:{location:{value:prefix+'/'+suffix}}};\n    }\n    if (request.uri === prefix + '/') request.uri = prefix + '/index.html';\n    if (request.uri.indexOf(prefix + '/api/') === 0) request.uri = request.uri.slice(prefix.length);\n    request.headers['x-rpg-site-origin'] = {value:'https://' + host};\n    return request;\n}"
+        }
+      }
+    },
+    "AllowCloudFrontUrl": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunctionUrl",
+        "FunctionName": {
+          "Ref": "SaveFunction"
+        },
+        "Principal": "cloudfront.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ExistingDistributionId}"
+        },
+        "FunctionUrlAuthType": "AWS_IAM"
+      }
+    },
+    "AllowCloudFrontInvoke": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "SaveFunction"
+        },
+        "Principal": "cloudfront.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ExistingDistributionId}"
+        },
+        "InvokedViaFunctionUrl": true
+      }
+    }
+  },
+  "Outputs": {
+    "DsqlEndpoint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "GameDatabase",
+          "Endpoint"
+        ]
+      }
+    },
+    "LambdaRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ApiRole",
+          "Arn"
+        ]
+      }
+    },
+    "DsqlClusterArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "GameDatabase",
+          "ResourceArn"
+        ]
+      }
+    },
+    "ApiFunctionUrl": {
+      "Value": {
+        "Fn::GetAtt": [
+          "SaveFunctionUrl",
+          "FunctionUrl"
+        ]
+      }
+    },
+    "ApiFunctionName": {
+      "Value": {
+        "Ref": "SaveFunction"
+      }
+    },
+    "ApiOriginAccessControlId": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ApiAccess",
+          "Id"
+        ]
+      }
+    },
+    "ApiOriginRequestPolicyId": {
+      "Value": "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+    },
+    "ApiSiteHeaderFunctionArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ApiSiteHeader",
+          "FunctionARN"
+        ]
+      }
+    }
+  },
+  "Parameters": {
+    "ExistingDistributionId": {
+      "Type": "String",
+      "AllowedPattern": "[A-Z0-9]+",
+      "Description": "Existing CloudFront distribution; only game-specific routes are added separately."
+    },
+    "SitePrefix": {
+      "Type": "String",
+      "Default": "/finalfight",
+      "AllowedPattern": "/[A-Za-z0-9_-]+",
+      "Description": "Game-only URL prefix"
+    },
+    "SiteDomain": {
+      "Type": "String",
+      "AllowedPattern": "[a-z0-9]+([.-][a-z0-9]+)*\\.[a-z]{2,}",
+      "Description": "Apex website hostname, without protocol or path; www redirects to this hostname."
+    }
+  }
+}
